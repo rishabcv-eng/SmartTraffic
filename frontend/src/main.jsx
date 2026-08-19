@@ -48,13 +48,16 @@ const DEMOS = [
 ]
 
 const VEHICLES = {
-  bike:  { label:'Two-wheeler', pcu:0.5, share:.46, len:2.6,  color:0x8fa3b5, w:.85, h:.62, d:1.9 },
-  auto:  { label:'Auto-rickshaw', pcu:0.8, share:.16, len:3.4, color:0xd8c65a, w:1.45, h:1.35, d:2.5 },
-  car:   { label:'Car / van', pcu:1.0, share:.28, len:5.4,     color:0x7f8b96, w:2.0, h:.85, d:4.0 },
-  bus:   { label:'Bus / lorry', pcu:3.0, share:.10, len:10.5,  color:0xc98b4b, w:2.45, h:2.6, d:9.0 },
+  bike:  { label:'Two-wheeler', pcu:0.5, occ:1.4,  share:.46, len:2.6,  color:0x8fa3b5, w:.85, h:.62, d:1.9 },
+  auto:  { label:'Auto-rickshaw', pcu:0.8, occ:2.5, share:.16, len:3.4, color:0xd8c65a, w:1.45, h:1.35, d:2.5 },
+  car:   { label:'Car / van', pcu:1.0, occ:2.2, share:.28, len:5.4,     color:0x7f8b96, w:2.0, h:.85, d:4.0 },
+  bus:   { label:'Bus / lorry', pcu:3.0, occ:32, share:.10, len:10.5,   color:0xc98b4b, w:2.45, h:2.6, d:9.0 },
 }
 const VKEYS = Object.keys(VEHICLES)
-const pcuOf = list => (list||[]).reduce((s,t)=>s+VEHICLES[t].pcu,0)
+const pcuOf    = list => (list||[]).reduce((s,t)=>s+VEHICLES[t].pcu,0)
+/* A bus is 3 PCU of road but carries ~32 people. Optimising vehicle delay quietly
+   penalises the mode that moves the most people — so we weigh occupancy too. */
+const peopleOf = list => (list||[]).reduce((s,t)=>s+VEHICLES[t].occ,0)
 
 const EV_START_DIST = 110      // distance units behind the stop line at dispatch
 const EV_SPEED = 7.5           // units per tick
@@ -346,6 +349,9 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       {frame?.total_pcu!==undefined && <div className="ctot pcu">
         <span>PCU load</span><strong>{frame.total_pcu}</strong>
       </div>}
+      {frame?.total_people!==undefined && <div className="ctot ppl">
+        <span>people waiting</span><strong>{frame.total_people}</strong>
+      </div>}
       <Spark frames={frames} upto={tick} color={accent==='smart'?'#62cffb':'#8190a0'}/>
     </div>
   </section>
@@ -397,11 +403,12 @@ function simulate(scenario, incident, steps, seed, mix){
   const MAX_GREEN   = 26     // no approach may monopolise
   const MAX_RED     = 30     // hard starvation guard
   const FAIR        = 0.09   // ageing weight: waiting approaches gain priority over time
+  const PERSON_W    = 0.05   // passenger-occupancy weight (people delayed, not just vehicles)
   const HYST        = 0.25   // must be clearly better before paying the switch cost
 
   const run = (policy)=>{
     let q={north:['car','car'],south:['car','car'],east:['car','car'],west:['car','car']}
-    let phase='NS', timer=0, amber=0, throughput=0, wait=0, pcuCleared=0
+    let phase='NS', timer=0, amber=0, throughput=0, wait=0, pcuCleared=0, peopleCleared=0
     let credit={north:0,south:0,east:0,west:0}   // part-discharged PCU carried between ticks
     let lastGreen={NS:0,EW:0}, switches=0
     const frames=[]
@@ -427,8 +434,11 @@ function simulate(scenario, incident, steps, seed, mix){
            an approach that has waited long enough is served even if it discharges
            slowly. Without this a blocked lane starves indefinitely. */
         const age = ax => FAIR * (t - lastGreen[ax]) * Math.sqrt(ax==='NS'?pNS:pEW)
-        const scoreNS = rateNS + age('NS')
-        const scoreEW = rateEW + age('EW')
+        /* person-delay term: an approach holding a full bus is holding 32 people */
+        const ppl = ax => PERSON_W * (ax==='NS'
+          ? peopleOf(q.north)+peopleOf(q.south) : peopleOf(q.east)+peopleOf(q.west))
+        const scoreNS = rateNS + age('NS') + ppl('NS')
+        const scoreEW = rateEW + age('EW') + ppl('EW')
         const curAxis = phase, oppAxis = phase==='NS'?'EW':'NS'
         const cur = curAxis==='NS'?scoreNS:scoreEW
         const opp = oppAxis==='NS'?scoreNS:scoreEW
@@ -446,6 +456,7 @@ function simulate(scenario, incident, steps, seed, mix){
       frames.push({ ...counts, phase:shown,
         total_queue: counts.north+counts.south+counts.east+counts.west,
         total_pcu: Math.round((pNS+pEW)*10)/10,
+        total_people: Math.round(['north','south','east','west'].reduce((n,d)=>n+peopleOf(q[d]),0)),
         types: { north:[...q.north], south:[...q.south], east:[...q.east], west:[...q.west] },
         byType })
 
@@ -457,8 +468,9 @@ function simulate(scenario, incident, steps, seed, mix){
              clear — not block the lane forever. Unspent capacity is carried over. */
           credit[d] = Math.min(credit[d] + capacity(t,d), capacity(t,d)*4)
           while(q[d].length && VEHICLES[q[d][0]].pcu <= credit[d] + 1e-9){
-            credit[d] -= VEHICLES[q[d][0]].pcu
+           credit[d] -= VEHICLES[q[d][0]].pcu
             pcuCleared += VEHICLES[q[d][0]].pcu
+            peopleCleared += VEHICLES[q[d][0]].occ
             q[d].shift(); throughput++
           }
         })
@@ -470,7 +482,8 @@ function simulate(scenario, incident, steps, seed, mix){
     }
     const avgQ = frames.reduce((s,f)=>s+f.total_queue,0)/frames.length
     return { frames, summary:{ average_queue:avgQ, average_wait_per_tick:wait/steps,
-             throughput, switches, pcu_cleared:Math.round(pcuCleared) } }
+             throughput, switches, pcu_cleared:Math.round(pcuCleared),
+             people_cleared:Math.round(peopleCleared) } }
   }
   return { steps, seed, scenario, incident, mix, fixed:run('fixed'), adaptive:run('adaptive'), clientSim:true }
 }
@@ -750,7 +763,7 @@ function App(){
 
   useEffect(()=>{
     if(!running||!data) return
-    const id=setInterval(()=>setTick(t=>t>=data.steps-1?0:t+1),Math.max(100,650/speed))
+    const id=setInterval(()=>setTick(t=>t>=data.steps-1?0:t+1),Math.max(70,650/speed))
     return()=>clearInterval(id)
   },[running,data,speed])
 
@@ -905,7 +918,7 @@ function App(){
         <option value="mix">Mixed traffic (PCU-weighted)</option>
         <option value="plain">Uniform cars (backend A/B)</option>
       </select></label>
-      <label>Speed<select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+      <label>Speed<select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="0.25">0.25× — frame by frame</option><option value="0.5">0.5× — slow</option><option value="1">1× — normal</option><option value="2">2×</option><option value="4">4× — fast</option></select></label>
     </div>
 
     <section className="demos">
