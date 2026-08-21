@@ -59,6 +59,35 @@ const pcuOf    = list => (list||[]).reduce((s,t)=>s+VEHICLES[t].pcu,0)
    penalises the mode that moves the most people — so we weigh occupancy too. */
 const peopleOf = list => (list||[]).reduce((s,t)=>s+VEHICLES[t].occ,0)
 
+/* ------------------------------------------------------------------ */
+/* Chennai baseline — TomTom Traffic Index 2025                        */
+/* tomtom.com/traffic-index/chennai-traffic/                           */
+/* Used to calibrate demand profiles and to state the real-world       */
+/* baseline our simulated delay is measured against.                   */
+/* ------------------------------------------------------------------ */
+const CHENNAI = {
+  source: 'TomTom Traffic Index 2025 — Chennai',
+  travelTime10km: '31 min 15 s',
+  avgCongestion: 58.6,
+  morningCongestion: 69.4,
+  eveningCongestion: 100.9,
+  morningSpeed: 17.7,
+  eveningSpeed: 14.6,
+  rushSpeed: 16,
+  hoursLostPerYear: 132,
+  worstDay: '17 Oct 2025 — 95% average, 154% at 6 pm',
+  kmIn15min: 4.8,
+}
+
+/* Demand multiplier derived from the measured congestion level:
+   a 100.9% congestion level means a trip takes ~2x the free-flow time. */
+const PROFILES = {
+  'off-peak':      { label:'Off-peak · 58.6% congestion',        mult:0.62, cong:CHENNAI.avgCongestion },
+  'morning-peak':  { label:'Morning peak · 69.4% · 17.7 km/h',   mult:0.85, cong:CHENNAI.morningCongestion },
+  'evening-peak':  { label:'Evening peak · 100.9% · 14.6 km/h',  mult:1.15, cong:CHENNAI.eveningCongestion },
+  'worst-day':     { label:'Worst day 17 Oct 2025 · 154% at 6pm', mult:1.55, cong:154 },
+}
+
 const EV_START_DIST = 110      // distance units behind the stop line at dispatch
 const EV_SPEED = 7.5           // units per tick
 
@@ -190,6 +219,24 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     }
     Object.keys(dirConfig).forEach(dir => pools[dir] = Array.from({length:24},(_,i)=>createCar(dir,i)))
 
+    /* ---------- departing vehicles: they drive through, not vanish ---------- */
+    const departPool = Array.from({length:40}, ()=>{
+      const c = new THREE.Group()
+      const variants = {}
+      VKEYS.forEach(k=>{
+        const v = VEHICLES[k]
+        const g = new THREE.Group()
+        const body = new THREE.Mesh(new THREE.BoxGeometry(v.w,v.h,v.d),
+          new THREE.MeshStandardMaterial({ color:v.color, roughness:.7 }))
+        body.position.y = v.h/2 + .18
+        g.add(body); g.visible=false; c.add(g); variants[k]=g
+      })
+      c.visible=false
+      c.userData={active:false,dir:'north',kind:'car',dist:0,speed:0,variants}
+      scene.add(c)
+      return c
+    })
+
     /* ---------- emergency vehicle mesh ---------- */
     const evGroup = new THREE.Group()
     const evBody = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.6,5.2),
@@ -221,7 +268,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     const ro = new ResizeObserver(resize); ro.observe(host)
 
     ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,phase:'NS',
-      queues:{north:0,south:0,east:0,west:0},types:null,
+      queues:{north:0,south:0,east:0,west:0},types:null,departPool,departQueue:[],
       evGroup,evBody,evBeacon,evGlow,ev:null}
 
     const clock = new THREE.Clock(); let raf=0
@@ -250,6 +297,34 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
           car.position.lerp(car.userData.target,Math.min(1,dt*7))
           car.rotation.y=cfg.rot
         })
+      })
+
+      /* release queued departures with start-up lost time, then drive them out */
+      while(c.departQueue.length){
+        const job = c.departQueue[0]
+        if(job.delay > 0){ job.delay -= dt; break }
+        const slot = c.departPool.find(v=>!v.userData.active)
+        if(!slot) { c.departQueue.shift(); continue }
+        c.departQueue.shift()
+        slot.userData.active = true
+        slot.userData.dir = job.dir
+        slot.userData.kind = job.kind
+        slot.userData.dist = 0
+        slot.userData.speed = 4
+        Object.entries(slot.userData.variants).forEach(([k,g])=>{ g.visible = (k===job.kind) })
+        slot.visible = true
+      }
+      c.departPool.forEach(v=>{
+        if(!v.userData.active) return
+        const cfg = c.dirConfig[v.userData.dir]
+        /* accelerate away from the stop line, as a real discharge wave does */
+        v.userData.speed = Math.min(26, v.userData.speed + 34*dt)
+        v.userData.dist += v.userData.speed*dt
+        const along = cfg.start - cfg.sign*(-v.userData.dist)
+        if(cfg.axis==='z') v.position.set(cfg.lane,0,along)
+        else v.position.set(along,0,cfg.lane)
+        v.rotation.y = cfg.rot
+        if(v.userData.dist > 78){ v.userData.active=false; v.visible=false }
       })
 
       /* emergency vehicle placement + flashing beacon */
@@ -293,6 +368,18 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
   useEffect(()=>{
     if(!ctx.current||!frame) return
     ctx.current.queues={north:frame.north,south:frame.south,east:frame.east,west:frame.west}
+    const prev = ctx.current.prevQueues
+    if(prev){
+      /* a queue that shrank means those vehicles crossed — animate them through */
+      ;['north','south','east','west'].forEach(d=>{
+        const gone = Math.max(0, (prev[d]||0) - (frame[d]||0))
+        const kinds = (prev.types && prev.types[d]) || []
+        for(let i=0;i<Math.min(gone,6);i++){
+          ctx.current.departQueue.push({ dir:d, kind:kinds[i] || 'car', delay:i*0.16 })
+        }
+      })
+    }
+    ctx.current.prevQueues = {north:frame.north,south:frame.south,east:frame.east,west:frame.west,types:frame.types}
     ctx.current.types = frame.types || null
     ctx.current.totalQueue = frame.total_queue || 0
   },[frame])
@@ -373,10 +460,11 @@ const INCIDENTS = {
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296 } }
 
-function simulate(scenario, incident, steps, seed, mix){
+function simulate(scenario, incident, steps, seed, mix, profile){
   const base = { 'north-surge':{north:1.5,south:1.1,east:.5,west:.4},
                  'east-surge' :{north:.5,south:.4,east:1.5,west:1.1},
                  'balanced'   :{north:.9,south:.9,east:.9,west:.9} }[scenario]
+  const pm = (PROFILES[profile] || PROFILES['morning-peak']).mult
   const rnd = mulberry32(seed*7919)
   const pickType = ()=>{ let r=rnd(), acc=0
     for(const k of VKEYS){ acc+=VEHICLES[k].share; if(r<=acc) return k }
@@ -386,7 +474,7 @@ function simulate(scenario, incident, steps, seed, mix){
     const boost = (incident==='school-exit' && t>=30 && t<60) ? 3.2 : 1
     const row={}
     ;['north','south','east','west'].forEach(d=>{
-      const n = Math.floor(rnd()*base[d]*(d==='north'?boost:1)*1.9)
+      const n = Math.floor(rnd()*base[d]*(d==='north'?boost:1)*1.9*pm)
       row[d] = Array.from({length:n}, ()=> mix ? pickType() : 'car')
     })
     arrivals.push(row)
@@ -485,7 +573,7 @@ function simulate(scenario, incident, steps, seed, mix){
              throughput, switches, pcu_cleared:Math.round(pcuCleared),
              people_cleared:Math.round(peopleCleared) } }
   }
-  return { steps, seed, scenario, incident, mix, fixed:run('fixed'), adaptive:run('adaptive'), clientSim:true }
+  return { steps, seed, scenario, incident, mix, profile, fixed:run('fixed'), adaptive:run('adaptive'), clientSim:true }
 }
 
 
@@ -504,10 +592,11 @@ const CORRIDOR = {
   TRAVEL: 6,           // ticks to traverse the link at free flow
 }
 
-function simulateCorridor(scenario, incident, steps, seed, mix){
+function simulateCorridor(scenario, incident, steps, seed, mix, profile){
   const demand = { 'north-surge':{main:3.2,crossA:.9,crossB:.8},
                    'east-surge' :{main:2.9,crossA:1.5,crossB:1.3},
                    'balanced'   :{main:2.8,crossA:1.1,crossB:1.0} }[scenario]
+  const pm = (PROFILES[profile] || PROFILES['morning-peak']).mult
   const rnd = mulberry32(seed*104729)
   const pickType = ()=>{ let r=rnd(), acc=0
     for(const k of VKEYS){ acc+=VEHICLES[k].share; if(r<=acc) return k }
@@ -515,7 +604,7 @@ function simulateCorridor(scenario, incident, steps, seed, mix){
   const arrivals=[]
   for(let t=0;t<steps;t++){
     const boost = (incident==='school-exit' && t>=30 && t<60) ? 2.8 : 1
-    const mk = rate => Array.from({length:Math.floor(rnd()*rate*1.9)}, ()=> mix?pickType():'car')
+    const mk = rate => Array.from({length:Math.floor(rnd()*rate*1.9*pm)}, ()=> mix?pickType():'car')
     arrivals.push({ main:mk(demand.main*boost), crossA:mk(demand.crossA), crossB:mk(demand.crossB) })
   }
   const cap = (t,where)=>{
@@ -724,6 +813,7 @@ function App(){
   const [error,setError]=useState('')
   const [incident,setIncident]=useState('none')
   const [mix,setMix]=useState(true)
+  const [profile,setProfile]=useState('morning-peak')
 
   /* ---------------- emergency vehicle state ---------------- */
   const [profiles,setProfiles]=useState(EV_FALLBACK)
@@ -733,8 +823,8 @@ function App(){
 
   const load=async()=>{
     if(incident!=='none' || mix){
-      setError(''); setData(simulate(scenario,incident,100,7,mix))
-      setCorr(simulateCorridor(scenario,incident,100,7,mix))
+      setError(''); setData(simulate(scenario,incident,100,7,mix,profile))
+      setCorr(simulateCorridor(scenario,incident,100,7,mix,profile))
       setTick(0); setRunning(false); setEv(null); return
     }
     try{
@@ -745,7 +835,7 @@ function App(){
       if(!res.ok) throw new Error(`backend returned HTTP ${res.status}`)
       if(!contentType.includes('application/json')) throw new Error(`backend did not return JSON from ${url}`)
       const payload=await res.json()
-      setData(payload); setCorr(simulateCorridor(scenario,incident,100,7,mix))
+      setData(payload); setCorr(simulateCorridor(scenario,incident,100,7,mix,profile))
       setTick(0);setRunning(false);setEv(null)
     }catch(e){
       setData(null)
@@ -753,7 +843,7 @@ function App(){
       setError(`Cannot reach SmartTraffic backend at ${API}. Start FastAPI with: cd backend && uvicorn app.main:app --reload --port 8000. (${e.message})`)
     }
   }
-  useEffect(()=>{load()},[scenario,incident,mix])
+  useEffect(()=>{load()},[scenario,incident,mix,profile])
 
   useEffect(()=>{
     fetch(`${API}/api/priority/types`).then(r=>r.json())
@@ -911,6 +1001,9 @@ function App(){
       <button onClick={()=>setView(v=>v==='pov'?'bird':'pov')}>{view==='pov'?'Bird’s-eye':'Intersection POV'}</button>
       <button onClick={load}>Reconnect backend</button>
       <label>Traffic pattern<select value={scenario} onChange={e=>setScenario(e.target.value)}><option value="north-surge">North/south surge</option><option value="east-surge">East/west surge</option><option value="balanced">Balanced traffic</option></select></label>
+      <label>Chennai profile<select value={profile} onChange={e=>setProfile(e.target.value)}>
+        {Object.keys(PROFILES).map(k=><option key={k} value={k}>{PROFILES[k].label}</option>)}
+      </select></label>
       <label>Incident<select value={incident} onChange={e=>setIncident(e.target.value)}>
         {Object.keys(INCIDENTS).map(k=><option key={k} value={k}>{INCIDENTS[k].label}</option>)}
       </select></label>
@@ -1051,6 +1144,29 @@ function App(){
         frames={data?.adaptive.frames} tick={tick} peers={peerMax}
         winning={fixed&&adaptive?adaptive.total_queue<fixed.total_queue:null}/>
     </div>
+
+    <section className="chennai">
+      <div className="chn-head">
+        <div>
+          <h2>Calibrated against measured Chennai traffic</h2>
+          <p>Demand profiles are scaled from published congestion levels, not invented.
+             Source: {CHENNAI.source}.</p>
+        </div>
+        <span className="chn-src">tomtom.com/traffic-index</span>
+      </div>
+      <div className="chn-grid">
+        <div className="chn"><span>Travel time per 10 km</span><strong>{CHENNAI.travelTime10km}</strong>
+          <small>annual average, city area</small></div>
+        <div className="chn"><span>Average congestion</span><strong>{CHENNAI.avgCongestion}%</strong>
+          <small>morning {CHENNAI.morningCongestion}% · evening {CHENNAI.eveningCongestion}%</small></div>
+        <div className="chn"><span>Rush-hour speed</span><strong>{CHENNAI.rushSpeed} km/h</strong>
+          <small>evening {CHENNAI.eveningSpeed} · morning {CHENNAI.morningSpeed} km/h</small></div>
+        <div className="chn accent"><span>Lost per driver per year</span><strong>{CHENNAI.hoursLostPerYear} h</strong>
+          <small>5 days 12 hours in rush-hour delay</small></div>
+      </div>
+      <p className="chn-note">Active profile: <b>{PROFILES[profile].label}</b>. Worst recorded day: {CHENNAI.worstDay}.
+        A driver covers only {CHENNAI.kmIn15min} km in 15 minutes at this congestion level.</p>
+    </section>
 
     {impact && <section className="impact">
       <div className="imp-title">Cumulative effect at T+{tick} · <span>identical arrivals, identical disruption</span></div>

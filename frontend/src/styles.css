@@ -171,3 +171,22 @@
 .corr-note{margin:10px 2px 0;color:#7f93a5;font-size:.76rem;line-height:1.5}
 .ctot.ppl{border-color:#4a3f6b;background:rgba(167,139,250,.08)}
 .ctot.ppl strong{color:#c4b5fd}
+
+/* ===================== CHENNAI BASELINE ===================== */
+.chennai{margin:18px 0 6px;background:linear-gradient(180deg,#141d2a 0,#0d1622 100%);
+  border:1px solid #2a3f56;border-radius:16px;padding:15px 18px}
+.chn-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.chn-head h2{margin:0;font-size:1.06rem}
+.chn-head p{margin:5px 0 0;color:#8fa4b6;font-size:.81rem;max-width:660px;line-height:1.5}
+.chn-src{font-size:.7rem;color:#7fb4d8;border:1px solid #2f5madeup;padding:4px 10px;border-radius:999px}
+.chn-src{border-color:#2f567a}
+.chn-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-top:13px}
+.chn{background:#101c28;border:1px solid #223448;border-radius:12px;padding:11px 14px}
+.chn span{display:block;color:#8397a8;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em}
+.chn strong{display:block;font-size:1.6rem;margin:3px 0 2px;font-variant-numeric:tabular-nums;color:#e6f1fa}
+.chn small{color:#6f8598;font-size:.7rem;line-height:1.35;display:block}
+.chn.accent{background:linear-gradient(180deg,#2a1a12 0,#1a1218 100%);border-color:#7a4a2a}
+.chn.accent strong{color:#ffb27a}
+.chn-note{margin:12px 0 0;color:#7f93a5;font-size:.76rem;line-height:1.5}
+.chn-note b{color:#cfe1f0}
+@media(max-width:1000px){.chn-grid{grid-template-columns:repeat(2,1fr)}}
