@@ -16,7 +16,44 @@ SmartTraffic is a local-first traffic-control prototype focused on a clear singl
 - Average queue, wait, throughput, peak queue, and current queue comparison.
 - POV and bird's-eye camera modes.
 
-The wider repository still contains network-level controller experiments, SUMO/TraCI adapters, emergency priority work, and benchmark services for future expansion. The main browser demo is intentionally single-junction so the comparison is easy to understand and defend.
+The wider repository contains network-level controller experiments, SUMO/TraCI adapters, emergency priority work, and benchmark services. The main browser demo is intentionally single-junction so the comparison is easy to understand and defend.
+
+## Operations console
+
+Below the A/B demo, the control room carries an **operations console** covering the
+questions a city asks after "does it work?".
+
+| Tab | Answers |
+| --- | --- |
+| Network health | Per-junction mode, delay distribution (p95, worst approach), pedestrian and bus waits. Inject detector, comms and signal-head faults and watch the fallback happen. |
+| Why this decision | Every phase change with the pressures behind it and the constraint that overrode the optimiser. |
+| City impact | Idle fuel, CO₂ and rupees saved per year, pooled over five seeds, with every assumption listed. |
+| Controller benchmark | All eight controllers ranked, with fairness and person-delay columns beside the averages. |
+| Green wave | Corridor offsets, through-band width, and a time-space diagram. |
+| Emergency priority | Ambulance travel time with and without preemption, plus what the rest of the traffic paid. |
+| What-if planner | Demand, weather, footfall and infrastructure failure, answered across seeds with 95% confidence intervals. |
+| Calibration & sensing | Fit demand to observed counts and verify the fit; vision detector and hardware feed status. |
+
+## What makes this deployable rather than just adaptive
+
+- **Safety shield.** Every controller runs behind minimum green, a maximum-green
+  starvation guard, a guaranteed maximum pedestrian wait, emergency preemption
+  and fault fallback. The optimiser proposes; the shield disposes and records
+  why. This is what makes the reinforcement-learning controller safe to run.
+- **Pedestrians and buses count.** Person-weighted delay stops the system
+  quietly optimising for private cars; a bus carrying 35 people outranks a
+  longer queue of single-occupancy cars.
+- **It degrades safely.** Detector dropout, stuck detectors, comms loss and
+  signal-head failure each route to a documented fallback, and faults corrupt
+  what the controller *sees* without changing physical truth.
+- **It explains itself.** `GET /api/safety/audit` is an engineering audit trail,
+  not a log.
+- **It reports in city units.** See `docs/IMPACT.md` for every constant.
+- **It admits what it cannot do.** Adaptive control currently loses to a fixed
+  clock under heavy oversaturation — measured, reproducible, and written up in
+  `docs/BENCHMARKS.md`.
+- **It collects counts, not identities.** No ANPR, no faces, no image retention.
+  See `docs/PRIVACY.md`.
 
 ## Run locally
 
@@ -130,6 +167,35 @@ creates one seeded arrival schedule and feeds the same arrivals into both contro
 - amber transition before changing phase
 
 This makes the A/B comparison reproducible and fair.
+
+## API reference
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/state` | Live network state, metrics, faults, decisions |
+| `POST /api/fault` · `/api/faults/clear` | Inject or clear infrastructure faults |
+| `POST /api/weather` | Set saturation-flow conditions |
+| `GET /api/safety/audit` | Per-decision explanation and override statistics |
+| `POST /api/impact/compare` | Fuel / CO₂ / rupee savings, pooled over seeds |
+| `GET /api/benchmark/suite` | Full controller comparison |
+| `POST /api/whatif` | Planning question with confidence intervals |
+| `GET /api/greenwave` | Corridor offsets and time-space diagram data |
+| `GET /api/emergency/comparison` | Ambulance travel time with/without preemption |
+| `POST /api/emergency/dispatch` | Put a priority vehicle on the live network |
+| `POST /api/calibrate` | Fit demand to an observed-counts CSV |
+| `POST /api/vision/analyse` · `/api/vision/apply` | Frame to lane counts, then operator correction |
+| `GET /api/hil/state` | Signal-head aspects for physical hardware (`?format=wire`) |
+
+## Hardware demo
+
+`hardware/` contains ESP32 firmware that drives real signal heads from
+`/api/hil/state`, with a link-loss fail-safe. See `hardware/README.md`.
+
+## Tests
+
+```bash
+cd backend && python -m pytest -q     # 91 tests
+```
 
 ## Research / expansion path
 

@@ -1,30 +1,16 @@
 from __future__ import annotations
 
-from app.controllers.actuated import ActuatedController
-from app.controllers.fixed_time import FixedTimeController
-from app.controllers.max_pressure import MaxPressureController
-from app.controllers.mpc_lite import MPCLiteController
-from app.controllers.network_max_pressure import NetworkMaxPressureController
-from app.controllers.predictive_pressure import PredictivePressureController
+from app.controllers.registry import CONTROLLERS, build
 from app.simulation.mock_engine import MockTrafficEngine
 
-CONTROLLERS = {
-    'fixed-time': FixedTimeController,
-    'actuated': ActuatedController,
-    'max-pressure': MaxPressureController,
-    'network-max-pressure': NetworkMaxPressureController,
-    'predictive-pressure-v2': PredictivePressureController,
-    'mpc-lite-v1': MPCLiteController,
-}
 
-
-def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal') -> dict:
+def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal', shielded: bool = True) -> dict:
     """Return aligned frame sequences and end metrics from identical demand."""
     steps = max(1, min(steps, 300))
     event_tick = max(0, min(event_tick, steps - 1))
     names = (left, right)
     engines = [MockTrafficEngine(), MockTrafficEngine()]
-    controllers = [CONTROLLERS.get(name, PredictivePressureController)() for name in names]
+    controllers = [build(name, shielded=shielded) for name in names]
     for engine in engines:
         engine.reset(scenario='rush' if scenario == 'rush' else 'normal', seed=seed)
 
@@ -46,11 +32,17 @@ def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v
 
     def metrics(engine, peak):
         final = engine.snapshot()
+        detail = final.metrics
         return {
             'throughput': final.throughput,
             'average_network_queue': round(final.total_wait / max(1, steps), 3),
             'final_queue': sum(j.queue for j in final.junctions),
             'peak_queue': peak,
+            'mean_vehicle_delay': detail['mean_vehicle_delay'],
+            'p95_vehicle_delay': detail['p95_vehicle_delay'],
+            'worst_approach_wait': detail['worst_approach_wait'],
+            'mean_person_delay': detail['mean_person_delay'],
+            'mean_pedestrian_delay': detail['mean_pedestrian_delay'],
         }
 
     return {
@@ -59,6 +51,7 @@ def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v
         'scenario': scenario,
         'event': event,
         'event_tick': event_tick,
+        'shielded': shielded,
         'left': {'controller': names[0], 'frames': histories[0], 'metrics': metrics(engines[0], peaks[0])},
         'right': {'controller': names[1], 'frames': histories[1], 'metrics': metrics(engines[1], peaks[1])},
     }

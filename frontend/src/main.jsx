@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import OpsConsole from './OpsConsole.jsx'
 import { createRoot } from 'react-dom/client'
 import * as THREE from 'three'
 import './styles.css'
@@ -1074,6 +1075,8 @@ function App(){
       <Metric label="Throughput change" value={`${throughputGain>=0?'+':''}${throughputGain}%`} hint="vehicles cleared"/>
       <Metric label="Current fixed queue" value={fixed?.total_queue??0} hint={`SmartTraffic: ${adaptive?.total_queue??0}`}/>
     </div>
+
+    <OpsConsole/>
 
   </main>
 }

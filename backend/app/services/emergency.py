@@ -74,3 +74,95 @@ def plan_green_corridor(
         'strategy': 'rolling-green-wave',
         'recovery': 'restore-network-optimum-after-passage',
     }
+
+
+def run_preemption_comparison(
+    route: list[str] | None = None,
+    baseline: str = 'fixed-time',
+    candidate: str = 'predictive-pressure-v2',
+    steps: int = 140,
+    seed: int = 7,
+    dispatch_tick: int = 20,
+    scenario: str = 'rush',
+) -> dict:
+    """Send the same ambulance through the same traffic under both controllers.
+
+    The baseline runs unshielded, so the ambulance takes whatever green it
+    happens to meet. The candidate runs behind the safety shield, which holds a
+    rolling green corridor ahead of the vehicle. The difference in door-to-door
+    travel time is the headline number.
+    """
+    from app.services.scenario import ScenarioConfig, simulate
+
+    route = route or ['J1', 'J2', 'J4']
+
+    def run(controller: str, shielded: bool, dispatch: bool = True) -> dict:
+        return simulate(ScenarioConfig(
+            controller=controller,
+            steps=steps,
+            seed=seed,
+            scenario=scenario,
+            shielded=shielded,
+            emergency_route=route if dispatch else None,
+            emergency_tick=dispatch_tick if dispatch else None,
+        ))
+
+    without = run(baseline, shielded=False)
+    with_preemption = run(candidate, shielded=True)
+    # Same controller, same seed, no ambulance: isolates what preemption itself
+    # cost the network from what simply differs between the two controllers.
+    undisturbed = run(candidate, shielded=True, dispatch=False)
+
+    a = without.get('emergency', {})
+    b = with_preemption.get('emergency', {})
+    saved = None
+    if a.get('travel_ticks') is not None and b.get('travel_ticks') is not None:
+        saved = a['travel_ticks'] - b['travel_ticks']
+
+    def cost(run_result: dict) -> dict:
+        """What the rest of the network paid for the priority passage."""
+        return {
+            'average_network_queue': run_result['average_network_queue'],
+            'mean_vehicle_delay': run_result['metrics']['mean_vehicle_delay'],
+            'throughput': run_result['throughput'],
+        }
+
+    return {
+        'route': route,
+        'seed': seed,
+        'scenario': scenario,
+        'dispatch_tick': dispatch_tick,
+        'without_preemption': {
+            'controller': baseline,
+            'emergency': a,
+            'network': cost(without),
+        },
+        'with_preemption': {
+            'controller': f'{candidate}+shield',
+            'emergency': b,
+            'network': cost(with_preemption),
+        },
+        'cost_of_priority': {
+            'controller': f'{candidate}+shield',
+            'network_without_ambulance': cost(undisturbed),
+            'network_with_ambulance': cost(with_preemption),
+            'extra_mean_vehicle_delay': round(
+                with_preemption['metrics']['mean_vehicle_delay']
+                - undisturbed['metrics']['mean_vehicle_delay'], 2
+            ),
+            'throughput_given_up': undisturbed['throughput'] - with_preemption['throughput'],
+        },
+        'saved_ticks': saved,
+        'saved_seconds': round(saved * 5.0, 1) if saved is not None else None,
+        'improvement_pct': (
+            round(100.0 * saved / max(1e-9, a['travel_ticks']), 1)
+            if saved is not None and a.get('travel_ticks') else None
+        ),
+        'red_light_waits_avoided': (
+            a.get('delay_ticks', 0) - b.get('delay_ticks', 0)
+        ),
+        'note': (
+            'Priority is not free: compare the network columns to see the delay '
+            'the rest of the traffic absorbed while the corridor was held.'
+        ),
+    }

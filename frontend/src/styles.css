@@ -171,3 +171,96 @@
 .corr-note{margin:10px 2px 0;color:#7f93a5;font-size:.76rem;line-height:1.5}
 .ctot.ppl{border-color:#4a3f6b;background:rgba(167,139,250,.08)}
 .ctot.ppl strong{color:#c4b5fd}
+
+/* ---------------------------------------------------------- operations console */
+.ops{margin-top:34px;border-top:1px solid #1d2c3d;padding-top:22px}
+.ops-head h2{margin:0;font-size:1.15rem;color:#e6f0f8}
+.ops-head p{margin:6px 0 0;color:#8fa4b6;font-size:.82rem;max-width:760px;line-height:1.55}
+.ops-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 4px}
+.ops-tabs button{background:#101c28;border:1px solid #223448;color:#9fb4c6;border-radius:999px;
+  padding:7px 15px;font-size:.78rem;cursor:pointer}
+.ops-tabs button:hover{border-color:#2c4a63;color:#cfe1f0}
+.ops-tabs button.sel{background:#16293a;border-color:#3d6b8f;color:#8fd8ff}
+
+.ops-panel{margin-top:14px;background:#0a121b;border:1px solid #1d2c3d;border-radius:13px;padding:15px 16px}
+.ops-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.ops-panel-head h3{margin:0;font-size:.95rem;color:#cfe1f0}
+.ops-panel-head p{margin:5px 0 0;color:#8397a8;font-size:.78rem;max-width:680px;line-height:1.5}
+.ops-panel h4{margin:16px 0 4px;font-size:.82rem;color:#cfe1f0}
+.ops-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ops-panel button,.ops-form button{background:#16293a;border:1px solid #2c4a63;color:#cfe1f0;
+  border-radius:8px;padding:7px 13px;font-size:.76rem;cursor:pointer}
+.ops-panel button:hover:not(:disabled){border-color:#3d6b8f;color:#8fd8ff}
+.ops-panel button:disabled{opacity:.5;cursor:default}
+.ops-panel button.sel{border-color:#3d6b8f;color:#8fd8ff;background:#1b3448}
+.ops-panel select,.ops-panel input[type=number],.ops-form select{background:#101c28;border:1px solid #223448;
+  color:#cfe1f0;border-radius:7px;padding:6px 9px;font-size:.76rem}
+.ops-panel input[type=number]{width:64px;margin-left:6px}
+
+.ops-banner{margin-top:14px;background:rgba(239,94,94,.1);border:1px solid #7d3030;color:#ffb0b0;
+  border-radius:11px;padding:11px 14px;font-size:.82rem;line-height:1.5}
+.ops-error{color:#ff9090;font-size:.8rem;margin:10px 0 0}
+.ops-muted{color:#7f93a5;font-size:.77rem;line-height:1.55;margin:10px 0 0}
+
+.ops-stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:13px}
+.ops-stat{background:#101c28;border:1px solid #223448;border-radius:11px;padding:9px 14px;min-width:132px;flex:1 1 132px}
+.ops-stat span{display:block;color:#8397a8;font-size:.65rem;text-transform:uppercase;letter-spacing:.07em}
+.ops-stat strong{display:block;font-size:1.28rem;color:#e6f0f8;font-variant-numeric:tabular-nums;margin-top:2px}
+.ops-stat small{display:block;color:#6f8598;font-size:.68rem;margin-top:2px;line-height:1.35}
+.ops-stat.good{border-color:#2f7d52}.ops-stat.good strong{color:#63e29a}
+.ops-stat.warn{border-color:#7d6330}.ops-stat.warn strong{color:#f0c274}
+
+.ops-junctions{display:flex;gap:10px;flex-wrap:wrap;margin-top:13px}
+.ops-junction{background:#101c28;border:1px solid #223448;border-radius:11px;padding:10px 13px;min-width:168px;flex:1 1 168px}
+.ops-junction.bad{border-color:#7d3030;background:rgba(239,94,94,.06)}
+.ops-junction header{display:flex;justify-content:space-between;align-items:center}
+.ops-junction header strong{color:#cfe1f0;font-size:.9rem}
+.ops-junction header span{font-size:.68rem;color:#8fd8ff;border:1px solid #2c4a63;border-radius:999px;padding:1px 8px}
+.ops-mode{margin:5px 0 7px;font-size:.68rem;color:#8397a8;text-transform:uppercase;letter-spacing:.06em}
+.ops-junction.bad .ops-mode{color:#ff9090}
+.ops-junction dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:3px 10px}
+.ops-junction dl div{display:flex;justify-content:space-between;gap:6px}
+.ops-junction dt{color:#6f8598;font-size:.68rem}
+.ops-junction dd{margin:0;color:#cfe1f0;font-size:.72rem;font-variant-numeric:tabular-nums}
+.ops-junction dd em{font-style:normal;color:#6f8598}
+
+.ops-buttons{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.ops-buttons button.ops-clear{border-color:#7d3030;color:#ff9090}
+.ops-faults{margin:12px 0 0;padding-left:18px;color:#8397a8;font-size:.75rem;line-height:1.7}
+.ops-faults code{color:#ff9090}
+
+.ops-reasons{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.ops-tag{background:rgba(240,194,116,.1);border:1px solid #7d6330;color:#f0c274;
+  border-radius:999px;padding:3px 11px;font-size:.7rem}
+.ops-tag.ok{background:rgba(99,226,154,.08);border-color:#2f7d52;color:#63e29a}
+
+.ops-table-wrap{margin-top:13px;overflow-x:auto}
+.ops-table{width:100%;border-collapse:collapse;font-size:.76rem;min-width:640px}
+.ops-table th{text-align:left;color:#8397a8;font-weight:600;font-size:.67rem;text-transform:uppercase;
+  letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid #223448;white-space:nowrap}
+.ops-table td{padding:6px 10px;border-bottom:1px solid #16232f;color:#cfe1f0;font-variant-numeric:tabular-nums}
+.ops-table td em{font-style:normal;color:#6f8598;font-size:.92em}
+.ops-table tr.overridden td{background:rgba(240,194,116,.05)}
+.ops-table .good{color:#63e29a}
+.ops-table .bad{color:#ff9090}
+
+.ops-assumptions{margin-top:14px;border:1px solid #223448;border-radius:10px;padding:10px 13px;background:#101c28}
+.ops-assumptions summary{cursor:pointer;color:#8fd8ff;font-size:.78rem}
+.ops-assumptions ul{margin:10px 0 0;padding-left:18px;color:#8397a8;font-size:.75rem;line-height:1.75}
+
+.ops-tsd{width:100%;height:auto;margin-top:14px;background:#101c28;border:1px solid #223448;border-radius:11px}
+.tsd-axis{stroke:#3a5570;stroke-width:1}
+.tsd-grid{stroke:#1d2c3d;stroke-width:1;stroke-dasharray:3 4}
+.tsd-green{fill:rgba(99,226,154,.3);stroke:#2f7d52;stroke-width:1;rx:3}
+.tsd-traj{fill:none;stroke:#8fd8ff;stroke-width:2;stroke-linejoin:round}
+.tsd-label{fill:#7f93a5;font-size:11px}
+
+.ops-form{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:13px}
+.ops-form label{display:flex;flex-direction:column;gap:4px;color:#8397a8;font-size:.7rem;
+  text-transform:uppercase;letter-spacing:.06em}
+.ops-form label span{color:#cfe1f0;font-size:.8rem;text-transform:none;letter-spacing:0}
+.ops-form input[type=range]{width:150px}
+
+.ops-csv{width:100%;margin-top:13px;background:#101c28;border:1px solid #223448;border-radius:9px;
+  color:#cfe1f0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;
+  padding:10px 12px;line-height:1.6;resize:vertical}

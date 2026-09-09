@@ -1,44 +1,73 @@
 # SmartTraffic Roadmap
 
+`[x]` done · `[~]` partial · `[ ]` outstanding
+
 ## M0 — Foundation
-- Deterministic mock traffic network
-- Fixed-time baseline
-- Predictive-pressure controller scaffold
-- REST/WebSocket API
-- Live control-room UI
+- [x] Deterministic mock traffic network
+- [x] Fixed-time baseline
+- [x] Predictive-pressure controller scaffold
+- [x] REST/WebSocket API
+- [x] Live control-room UI
 
 ## M1 — Real SUMO network
-- Implement TraCI adapter
-- Build controlled four-junction SUMO scenario
-- Import a real OSM road network
-- Stream lane/edge state to the UI
-- Deterministic reset and replay
+- [x] Implement TraCI adapter
+- [x] Build controlled four-junction SUMO scenario
+- [x] Import a real OSM road network
+- [~] Stream lane/edge state to the UI
+- [x] Deterministic reset and replay
+- [ ] Validate generated traffic-light phases
 
 ## M2 — Strong baselines
-- Actuated controller
-- Max-pressure controller
-- Batch benchmark runner
-- Delay, queue, throughput, stops and spillback metrics
+- [x] Actuated controller
+- [x] Max-pressure controller
+- [x] Batch benchmark runner
+- [x] Delay, queue, throughput, stops and spillback metrics
+- [x] p95 / worst-case delay and per-approach fairness metrics
 
 ## M3 — Predictive coordination
-- Short-horizon arrival/queue predictor
-- Downstream spillback forecast
-- Coordinated multi-junction controller
-- Ablation against max-pressure
+- [x] Short-horizon arrival/queue predictor
+- [x] Downstream spillback forecast
+- [x] Coordinated multi-junction controller
+- [x] Ablation against max-pressure
+- [x] Corridor offset optimisation and time-space diagram
+- [ ] Graph/flow predictor replacing the clone-based forecast
 
 ## M4 — Visual state ingestion
-- Uploaded traffic image to lane/vehicle estimates
-- Confidence-aware initialization
-- Manual correction UI
+- [x] Uploaded traffic image to lane/vehicle estimates
+- [x] Confidence-aware initialisation (low-confidence estimates are refused)
+- [x] Manual correction path with operator provenance
+- [ ] Per-camera mask commissioning UI
 
 ## M5 — Disturbance handling
-- Accident/capacity drop
-- Demand surge
-- Emergency green corridor
-- Sensor/signal fault fallback
+- [x] Accident / capacity drop
+- [x] Demand surge
+- [x] Emergency green corridor, end to end with travel-time measurement
+- [x] Sensor and signal fault fallback with an explicit fallback ladder
+- [x] Weather-reduced saturation flow
 
 ## M6 — SIH demonstration
-- Side-by-side baseline vs SmartTraffic simulation
-- Real-map animated control room
-- Future congestion overlay
-- Reproducible benchmark report
+- [x] Side-by-side baseline vs SmartTraffic simulation
+- [x] Reproducible benchmark report
+- [x] Operations console: impact, audit, faults, planner
+- [~] Real-map animated control room
+- [ ] Future congestion overlay on the map view
+
+## M7 — Deployability *(new)*
+- [x] Safety shield: min/max green, pedestrian wait guarantee, fault fallback
+- [x] Per-decision audit trail with the binding constraint recorded
+- [x] Person-throughput objective and bus priority
+- [x] Impact model in fuel, CO₂ and rupees with published assumptions
+- [x] Demand calibration from observed counts
+- [x] What-if planner with confidence intervals
+- [x] Hardware-in-the-loop signal heads
+- [x] Privacy position documented against DPDP
+- [ ] Edge deployment: container, latency budget, offline operation
+
+## M8 — Oversaturation *(new, open research)*
+- [ ] Gating and metering at corridor entry
+- [ ] Refuse to serve movements whose downstream is blocked
+- [ ] Re-run the rush benchmark once a calibrated peak replaces the synthetic one
+
+Adaptive control currently **loses to fixed-time** under heavy oversaturation.
+This is measured and reproducible — see `docs/BENCHMARKS.md`. It is the most
+important open problem in the project.

@@ -2,63 +2,82 @@ from __future__ import annotations
 
 from statistics import mean, pstdev
 
-from app.controllers.actuated import ActuatedController
-from app.controllers.fixed_time import FixedTimeController
-from app.controllers.max_pressure import MaxPressureController
-from app.controllers.mpc_lite import MPCLiteController
-from app.controllers.network_max_pressure import NetworkMaxPressureController
-from app.controllers.predictive_pressure import PredictivePressureController
-from app.simulation.mock_engine import MockTrafficEngine
+from app.controllers.registry import CONTROLLERS
+from app.services.impact import compare_impact
+from app.services.scenario import ScenarioConfig, simulate
+
+#: Benchmarks run behind the safety shield by default, because that is the
+#: configuration a city would actually deploy: no controller ships without
+#: minimum green, starvation limits and a pedestrian guarantee. Set
+#: ``shielded=False`` for an ablation of the raw optimiser.
+DEFAULT_SHIELDED = True
+
+BASELINE = 'fixed-time'
 
 
-def _controllers():
-    return [
-        FixedTimeController(),
-        ActuatedController(),
-        MaxPressureController(),
-        NetworkMaxPressureController(),
-        PredictivePressureController(),
-        MPCLiteController(),
-    ]
+def controller_names() -> list[str]:
+    return list(CONTROLLERS)
 
 
-def _single_run(controller, *, steps: int, seed: int, scenario: str, event: str | None = None, event_tick: int = 30) -> dict:
-    engine = MockTrafficEngine()
-    engine.reset(scenario='rush' if scenario == 'rush' else 'normal', seed=seed)
-    peak_queue = 0
-    phase_switches = 0
-    previous_actions = None
-
-    for tick in range(steps):
-        if event and tick == event_tick:
-            engine.inject(event)
-        snap = engine.snapshot()
-        actions = controller.choose_phases(snap)
-        if previous_actions is not None:
-            phase_switches += sum(actions[jid] != previous_actions.get(jid) for jid in actions)
-        previous_actions = actions.copy()
-        engine.step(actions)
-        peak_queue = max(peak_queue, sum(j.queue for j in engine.snapshot().junctions))
-
-    final = engine.snapshot()
+def _single_run(
+    name: str,
+    *,
+    steps: int,
+    seed: int,
+    scenario: str,
+    event: str | None = None,
+    event_tick: int = 30,
+    shielded: bool = DEFAULT_SHIELDED,
+) -> dict:
+    result = simulate(ScenarioConfig(
+        controller=name,
+        steps=steps,
+        seed=seed,
+        scenario=scenario,
+        event=event,
+        event_tick=event_tick,
+        shielded=shielded,
+    ))
+    metrics = result['metrics']
     return {
-        'controller': controller.name,
+        'controller': name,
         'steps': steps,
         'seed': seed,
         'scenario': scenario,
         'event': event,
-        'throughput': final.throughput,
-        'average_network_queue': round(final.total_wait / max(1, steps), 3),
-        'final_queue': sum(j.queue for j in final.junctions),
-        'peak_queue': peak_queue,
-        'phase_switches': phase_switches,
+        'shielded': shielded,
+        'throughput': result['throughput'],
+        'average_network_queue': result['average_network_queue'],
+        'final_queue': result['final_queue'],
+        'peak_queue': result['peak_queue'],
+        'phase_switches': result['phase_switches'],
+        # Distribution, not just the mean: p95 and worst-case expose the
+        # starvation that an average queue length hides.
+        'mean_vehicle_delay': metrics['mean_vehicle_delay'],
+        'p95_vehicle_delay': metrics['p95_vehicle_delay'],
+        'max_vehicle_delay': metrics['max_vehicle_delay'],
+        'worst_approach': metrics['worst_approach'],
+        'worst_approach_wait': metrics['worst_approach_wait'],
+        'mean_person_delay': metrics['mean_person_delay'],
+        'mean_bus_delay': metrics['mean_bus_delay'],
+        'mean_pedestrian_delay': metrics['mean_pedestrian_delay'],
+        'p95_pedestrian_delay': metrics['p95_pedestrian_delay'],
+        'pedestrians_served': metrics['pedestrians_served'],
+        'co2_kg': result['impact']['co2_kg'],
+        'total_cost_inr': result['impact']['total_cost_inr'],
+        '_metrics': metrics,
     }
 
 
-def run_benchmark(steps: int = 120, seed: int = 7, scenario: str = 'rush') -> list[dict]:
+def run_benchmark(
+    steps: int = 120,
+    seed: int = 7,
+    scenario: str = 'rush',
+    shielded: bool = DEFAULT_SHIELDED,
+) -> list[dict]:
     return [
-        _single_run(controller, steps=steps, seed=seed, scenario=scenario)
-        for controller in _controllers()
+        _single_run(name, steps=steps, seed=seed, scenario=scenario, shielded=shielded)
+        for name in controller_names()
     ]
 
 
@@ -66,6 +85,7 @@ def run_benchmark_suite(
     steps: int = 180,
     seeds: list[int] | None = None,
     scenarios: list[str] | None = None,
+    shielded: bool = DEFAULT_SHIELDED,
 ) -> dict:
     """Robust controller comparison across demand and disturbance cases."""
     seeds = seeds or [3, 7, 11, 19, 29]
@@ -76,48 +96,84 @@ def run_benchmark_suite(
         base_scenario = 'rush' if scenario.startswith('rush') else 'normal'
         event = 'accident' if 'accident' in scenario else None
         for seed in seeds:
-            for controller in _controllers():
+            for name in controller_names():
                 raw.append(_single_run(
-                    controller,
+                    name,
                     steps=steps,
                     seed=seed,
                     scenario=base_scenario,
                     event=event,
                     event_tick=max(10, steps // 4),
+                    shielded=shielded,
                 ))
 
+    def avg(rows: list[dict], key: str) -> float:
+        return round(mean([r[key] for r in rows]), 3)
+
     summary = []
-    for name in [c.name for c in _controllers()]:
+    for name in controller_names():
         rows = [r for r in raw if r['controller'] == name]
         queues = [r['average_network_queue'] for r in rows]
-        throughputs = [r['throughput'] for r in rows]
-        peaks = [r['peak_queue'] for r in rows]
-        switches = [r['phase_switches'] for r in rows]
         summary.append({
             'controller': name,
             'runs': len(rows),
             'mean_average_queue': round(mean(queues), 3),
             'queue_stddev': round(pstdev(queues), 3),
-            'mean_throughput': round(mean(throughputs), 2),
-            'mean_peak_queue': round(mean(peaks), 2),
-            'mean_phase_switches': round(mean(switches), 2),
+            'mean_throughput': avg(rows, 'throughput'),
+            'mean_peak_queue': avg(rows, 'peak_queue'),
+            'mean_phase_switches': avg(rows, 'phase_switches'),
+            'mean_vehicle_delay': avg(rows, 'mean_vehicle_delay'),
+            'mean_p95_vehicle_delay': avg(rows, 'p95_vehicle_delay'),
+            'mean_worst_approach_wait': avg(rows, 'worst_approach_wait'),
+            'mean_person_delay': avg(rows, 'mean_person_delay'),
+            'mean_bus_delay': avg(rows, 'mean_bus_delay'),
+            'mean_pedestrian_delay': avg(rows, 'mean_pedestrian_delay'),
+            'mean_co2_kg': avg(rows, 'co2_kg'),
         })
 
-    fixed = next(r for r in summary if r['controller'] == 'fixed-time')
+    fixed = next(r for r in summary if r['controller'] == BASELINE)
     for row in summary:
         row['queue_improvement_vs_fixed_pct'] = round(
-            100.0 * (fixed['mean_average_queue'] - row['mean_average_queue']) / max(1e-9, fixed['mean_average_queue']), 2
+            100.0 * (fixed['mean_average_queue'] - row['mean_average_queue'])
+            / max(1e-9, fixed['mean_average_queue']), 2
         )
         row['throughput_improvement_vs_fixed_pct'] = round(
-            100.0 * (row['mean_throughput'] - fixed['mean_throughput']) / max(1e-9, fixed['mean_throughput']), 2
+            100.0 * (row['mean_throughput'] - fixed['mean_throughput'])
+            / max(1e-9, fixed['mean_throughput']), 2
+        )
+        row['p95_improvement_vs_fixed_pct'] = round(
+            100.0 * (fixed['mean_p95_vehicle_delay'] - row['mean_p95_vehicle_delay'])
+            / max(1e-9, fixed['mean_p95_vehicle_delay']), 2
         )
 
     ranking = sorted(summary, key=lambda r: (r['mean_average_queue'], -r['mean_throughput']))
+    best = ranking[0]['controller']
+
+    # City-facing translation of the winner against the fixed-time baseline,
+    # averaged over every run so it is not cherry-picked from one seed.
+    def pooled(name: str) -> dict:
+        rows = [r['_metrics'] for r in raw if r['controller'] == name]
+        keys = (
+            'total_vehicle_wait_ticks', 'total_bus_wait_ticks',
+            'total_person_wait_ticks',
+        )
+        return {k: sum(m.get(k, 0) for m in rows) / len(rows) for k in keys}
+
+    impact = compare_impact(pooled(BASELINE), pooled(best), steps=steps)
+
+    for row in summary:
+        row.pop('_metrics', None)
+    for row in raw:
+        row.pop('_metrics', None)
+
     return {
         'steps_per_run': steps,
         'seeds': seeds,
         'scenarios': scenarios,
+        'shielded': shielded,
         'summary': ranking,
         'raw': raw,
+        'best_controller': best,
+        'impact_vs_fixed_time': impact,
         'note': 'Mock-engine development benchmark only; final SIH claims must be regenerated in SUMO/TraCI.',
     }

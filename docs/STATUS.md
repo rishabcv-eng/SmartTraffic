@@ -1,35 +1,69 @@
 # Implementation status
 
-## Working and locally validated
+## Fully implemented
 
-- deterministic connected four-junction traffic lab
-- fixed-time baseline
-- max-pressure baseline
-- predictive-pressure-v1 network-aware controller
-- accident and rush-hour disturbance injection
-- emergency-corridor scenario marker
-- short-horizon clone-based forecast endpoint
-- REST + WebSocket backend
-- live React control room and network congestion map
-- reproducible three-controller benchmark
-- deterministic side-by-side comparison replay
-- stateful short-horizon downstream trend prediction
-- regression tests (`4 passed` in the development environment)
+- Deterministic connected four-junction traffic lab with per-vehicle tracking,
+  so delay percentiles and person-weighted delay are exact rather than inferred
+  from queue length.
+- Eight controllers: `fixed-time`, `actuated`, `max-pressure`,
+  `network-max-pressure`, `predictive-pressure-v2`, `mpc-lite-v1`,
+  `transit-priority-v1` (person-weighted), `rl-q-learning-v1` (shielded).
+- **Safety shield** wrapping any controller: minimum green, maximum green
+  starvation guard, guaranteed maximum pedestrian wait, emergency preemption,
+  and fault fallback — with a per-decision audit trail explaining which
+  constraint bound and why.
+- **Pedestrians and buses as first-class road users.** Exclusive pedestrian
+  phase with a hard wait cap; buses weighted by occupancy in both metrics and
+  the transit-priority objective.
+- **End-to-end emergency preemption.** A priority vehicle physically traverses
+  the network; the shield holds a rolling green corridor ahead of it. The
+  comparison endpoint reports travel time with and without preemption *and* the
+  cost the rest of the network paid, measured against the same controller.
+- **Degraded-mode operation.** Detector dropout, stuck detector, comms loss and
+  signal-head failure are injectable. Faults corrupt what the controller
+  observes without changing physical truth, and each fault routes to a
+  documented fallback.
+- **Weather and event modes** reducing saturation flow (rain, heavy rain, fog)
+  and raising footfall (stadium egress).
+- **Impact model** converting delay into idle fuel, CO₂ and rupees, with every
+  assumption published in `docs/IMPACT.md` and overridable per request.
+- **Corridor coordination** with offset computation, through-band measurement
+  and time-space diagram data.
+- **What-if planner** answering planning questions across many seeds with paired
+  95% confidence intervals and a significance flag.
+- **Demand calibration** from an observed-counts CSV, with a replay that reports
+  the residual between observed and simulated flow.
+- **Vision pipeline (M4 complete):** detect → bind to approach via a camera mask
+  → score confidence → operator correction → seed the controller. Low-confidence
+  estimates are refused unless explicitly forced.
+- **Hardware-in-the-loop** signal-head feed with an ASCII wire format and ESP32
+  firmware, including link-loss fail-safe.
+- REST + WebSocket API, React control room with an operations console.
+- 91 regression tests.
 
-## Integrated but requires SUMO on the machine
+## Requires an external dependency
 
-- TraCI engine adapter with lane-geometry direction inference and existing-program green-phase selection
-- runtime engine switching via `SMARTTRAFFIC_ENGINE=sumo`
-- 2x2 controlled demo network source files
-- OSM -> SUMO import helper
+- SUMO/TraCI adapter, runtime engine switching via `SMARTTRAFFIC_ENGINE=sumo`,
+  demo network files and OSM conversion.
+- YOLO detection needs `ultralytics` and local weights; everything downstream of
+  detection (lane binding, confidence, correction, seeding) is implemented and
+  tested without it.
 
-## Final research work before making competition claims
+## Incomplete / research phase
 
-- validate traffic-light phase mapping on the generated SUMO network
-- run large multi-seed SUMO experiments
-- implement graph/flow predictor rather than the current clone forecast
-- integrate visual traffic estimation (uploaded images/video) with explicit confidence
-- implement full emergency green-wave timing in SUMO
-- choose/import a real city road corridor for the final demo
+- **Oversaturation.** Every adaptive controller currently loses to fixed-time
+  under heavy oversaturation. This is measured, reproducible and documented in
+  `docs/BENCHMARKS.md`. It needs gating and metering, not better queue-chasing.
+- **RL quality.** `rl-q-learning-v1` is wired up and safely shielded, but 30
+  training episodes on a coarse state space is not enough; it is currently the
+  weakest controller. Treat it as an integration proof, not a result.
+- Traffic-light phase validation on generated SUMO networks.
+- Large-scale multi-seed SUMO experiments.
+- Graph/flow predictor (currently clone-based forecasting).
+- Real city corridor integration for the final demonstration.
 
-The mock engine is for development and regression only; final performance claims must come from SUMO experiments.
+## Key limitation
+
+The mock engine is a development harness. **Final performance claims must come
+from SUMO experiments**, and demand must be calibrated against real counts
+before any impact figure is quoted to a city.
