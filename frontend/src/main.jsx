@@ -113,6 +113,101 @@ function SignalHead({ phase, axis }) {
   </div>
 }
 
+/* ------------------------------------------------------------------ */
+/* Scene dressing helpers.                                             */
+/* A junction reads as a place, not a diagram, when it has depth cues: */
+/* lit windows, street lighting, kerbs and people. These build the     */
+/* textures and sprites for that once, then everything reuses them.    */
+/* ------------------------------------------------------------------ */
+
+/* Soft radial glow. Used for signal bulbs and lamp spill — far cheaper
+   than a post-processing bloom pass and works on weak GPUs. */
+let _glowTex = null
+function glowTexture(){
+  if(_glowTex) return _glowTex
+  const c = document.createElement('canvas'); c.width = c.height = 64
+  const g = c.getContext('2d')
+  const grad = g.createRadialGradient(32,32,0,32,32,32)
+  grad.addColorStop(0,'rgba(255,255,255,1)')
+  grad.addColorStop(.35,'rgba(255,255,255,.55)')
+  grad.addColorStop(1,'rgba(255,255,255,0)')
+  g.fillStyle = grad; g.fillRect(0,0,64,64)
+  _glowTex = new THREE.CanvasTexture(c)
+  return _glowTex
+}
+
+function makeGlow(color, scale){
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture(), color, transparent:true, opacity:0,
+    blending: THREE.AdditiveBlending, depthWrite:false,
+  }))
+  s.scale.set(scale,scale,1)
+  return s
+}
+
+/* Facade texture with a window grid. Returns a colour map plus a matching
+   emissive map so only the lit windows glow after dark. */
+function makeFacade(baseHex, litHex, seed){
+  const W = 64, H = 128, cols = 6, rows = 12
+  const mk = () => { const c = document.createElement('canvas'); c.width=W; c.height=H; return c }
+  const cMap = mk(), eMap = mk()
+  const cg = cMap.getContext('2d'), eg = eMap.getContext('2d')
+  const base = new THREE.Color(baseHex), lit = new THREE.Color(litHex)
+
+  cg.fillStyle = `#${base.getHexString()}`; cg.fillRect(0,0,W,H)
+  eg.fillStyle = '#000000'; eg.fillRect(0,0,W,H)
+
+  /* Deterministic per-building so a facade does not reshuffle every frame. */
+  let n = seed * 9301 + 49297
+  const rnd = () => { n = (n * 9301 + 49297) % 233280; return n / 233280 }
+
+  const pw = W/cols*.56, ph = H/rows*.42
+  for(let r=0;r<rows;r++){
+    for(let col=0;col<cols;col++){
+      const x = (col + .5) * (W/cols) - pw/2
+      const y = (r + .5) * (H/rows) - ph/2
+      const on = rnd() > .42
+      cg.fillStyle = on ? `#${lit.getHexString()}` : `#${base.clone().offsetHSL(0,0,-.06).getHexString()}`
+      cg.fillRect(x,y,pw,ph)
+      if(on){
+        eg.fillStyle = `#${lit.getHexString()}`
+        eg.fillRect(x,y,pw,ph)
+      }
+    }
+  }
+  const t1 = new THREE.CanvasTexture(cMap), t2 = new THREE.CanvasTexture(eMap)
+  return { map:t1, emissiveMap:t2 }
+}
+
+/* Crosswalks. A pedestrian may only cross an arm while the traffic on that
+   arm is stopped, so the people on screen are a readable signal of what the
+   controller is doing rather than decoration. */
+const CROSSWALKS = [
+  { id:'n', axis:'x', fixed:-15, from:-12, to:12, safeOn:'EW' },
+  { id:'s', axis:'x', fixed: 15, from:-12, to:12, safeOn:'EW' },
+  { id:'w', axis:'z', fixed:-15, from:-12, to:12, safeOn:'NS' },
+  { id:'e', axis:'z', fixed: 15, from:-12, to:12, safeOn:'NS' },
+]
+
+const SHIRTS = [0xe06c5a,0x4f9dd6,0xe8b64c,0x6fbf8a,0xb98fd1,0xe0e3e6,0xd97fa8,0x5fc7c2]
+
+function makePerson(i){
+  const g = new THREE.Group()
+  const shirt = SHIRTS[i % SHIRTS.length]
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(.34,.62,.26),
+    new THREE.MeshStandardMaterial({ color:0x2f3a45, roughness:.9 }))
+  legs.position.y = .31
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.42,.62,.3),
+    new THREE.MeshStandardMaterial({ color:shirt, roughness:.85 }))
+  torso.position.y = .93
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.17,12,12),
+    new THREE.MeshStandardMaterial({ color:0x9a6b4f, roughness:.8 }))
+  head.position.y = 1.36
+  g.add(legs,torso,head)
+  g.userData = { legs, torso, phase: Math.random()*Math.PI*2 }
+  return g
+}
+
 function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, frames, tick, winning, peers }) {
   const mount = useRef(null)
   const ctx = useRef(null)
@@ -150,38 +245,185 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), markMat)
       m.rotation.x = -Math.PI / 2; m.position.set(x, .026, z); scene.add(m)
     }
-    for (let z = -68; z <= 68; z += 10) stripe(0, z, .16, 4.5)
-    for (let x = -68; x <= 68; x += 10) stripe(x, 0, 4.5, .16)
-    stripe(0, -13, 19, .45); stripe(0, 13, 19, .45); stripe(-13, 0, .45, 19); stripe(13, 0, .45, 19)
+    for (let z = -68; z <= 68; z += 10) if(Math.abs(z) > 18) stripe(0, z, .16, 4.5)
+    for (let x = -68; x <= 68; x += 10) if(Math.abs(x) > 18) stripe(x, 0, 4.5, .16)
+    stripe(0, -16.3, 19, .45); stripe(0, 16.3, 19, .45)
+    stripe(-16.3, 0, .45, 19); stripe(16.3, 0, .45, 19)
 
-    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x454d54, roughness: 1 })
-    ;[[-38,-38],[38,-38],[-38,38],[38,38]].forEach(([x,z], i) => {
-      const h = 8 + (i % 3) * 5
-      const b = new THREE.Mesh(new THREE.BoxGeometry(28, h, 28), buildingMat)
-      b.position.set(x, h / 2, z); scene.add(b)
+    /* ---------- kerbs and footpaths ---------- */
+    const kerbMat = new THREE.MeshStandardMaterial({ color: 0x5a6169, roughness: .95 })
+    const pathMat = new THREE.MeshStandardMaterial({ color: 0x4a5158, roughness: 1 })
+    ;[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(53,.5,53), pathMat)
+      foot.position.set(sx*38.5, .25, sz*38.5); scene.add(foot)
+      const k1 = new THREE.Mesh(new THREE.BoxGeometry(53,.62,.7), kerbMat)
+      k1.position.set(sx*38.5, .31, sz*12.35); scene.add(k1)
+      const k2 = new THREE.Mesh(new THREE.BoxGeometry(.7,.62,53), kerbMat)
+      k2.position.set(sx*12.35, .31, sz*38.5); scene.add(k2)
     })
 
-    const lampMeshes = []
-    const addSignal = (x, z, axis) => {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,5.4), new THREE.MeshStandardMaterial({ color: 0x6f777c }))
-      pole.position.set(x,2.7,z); scene.add(pole)
-      const box = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.4,.7), new THREE.MeshStandardMaterial({ color: 0x15191c }))
-      box.position.set(x,5.35,z); scene.add(box)
-      const colors = [0xe34f4f,0xe5b94d,0x43cf7c]
-      colors.forEach((c, idx) => {
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(.22,16,16), new THREE.MeshBasicMaterial({ color: idx === 0 ? c : 0x22282c }))
-        bulb.position.set(x,6.0 - idx*.62,z+.38); scene.add(bulb)
-        lampMeshes.push({ bulb, axis, idx, color:c })
-      })
+    /* ---------- zebra crossings on all four arms ---------- */
+    const zebraMat = new THREE.MeshBasicMaterial({ color: 0xeef1f3 })
+    const zebra = (x,z,horizontal) => {
+      for(let o=-11;o<=11;o+=2.2){
+        const g = horizontal ? new THREE.PlaneGeometry(1.15,4.2) : new THREE.PlaneGeometry(4.2,1.15)
+        const m = new THREE.Mesh(g, zebraMat)
+        m.rotation.x = -Math.PI/2
+        m.position.set(horizontal ? x+o : x, .03, horizontal ? z : z+o)
+        scene.add(m)
+      }
     }
-    addSignal(-9,-9,'NS'); addSignal(9,9,'NS'); addSignal(-9,9,'EW'); addSignal(9,-9,'EW')
+    zebra(0,-15,true); zebra(0,15,true); zebra(-15,0,false); zebra(15,0,false)
+
+    /* ---------- city block: varied heights, colours and lit windows ---------- */
+    const BUILDING_TONES = [
+      [0x4a5560,0xffd9a0],[0x565060,0xffcf8a],[0x3f5157,0xdfeaff],
+      [0x60544a,0xffe0b0],[0x475a55,0xcfeee0],[0x54495c,0xffd4e6],
+    ]
+    const blocks = [
+      [-40,-40,26,26],[ 40,-40,26,26],[-40, 40,26,26],[ 40, 40,26,26],
+      [-72,-30,22,20],[ 72,-30,22,20],[-72, 34,22,20],[ 72, 34,22,20],
+      [-30,-74,20,22],[ 34,-74,20,22],[-30, 74,20,22],[ 34, 74,20,22],
+    ]
+    blocks.forEach(([x,z,w,d], i) => {
+      const h = 9 + ((i * 7) % 5) * 6
+      const [base, lit] = BUILDING_TONES[i % BUILDING_TONES.length]
+      const { map, emissiveMap } = makeFacade(base, lit, i + 1)
+      map.wrapS = map.wrapT = emissiveMap.wrapS = emissiveMap.wrapT = THREE.RepeatWrapping
+      map.repeat.set(Math.max(1,Math.round(w/9)), Math.max(1,Math.round(h/7)))
+      emissiveMap.repeat.copy(map.repeat)
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({
+        map, emissiveMap, emissive: 0xffffff, emissiveIntensity: .85, roughness: .9,
+      }))
+      b.position.set(x, h/2 + .5, z); scene.add(b)
+      /* roof slab reads as a parapet and stops the facade texture wrapping oddly */
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w+.6,.8,d+.6),
+        new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness:1 }))
+      roof.position.set(x, h + .9, z); scene.add(roof)
+    })
+
+    /* ---------- street trees on the footpaths ---------- */
+    const trunkMat = new THREE.MeshStandardMaterial({ color:0x4a3a2c, roughness:1 })
+    const leafMat  = new THREE.MeshStandardMaterial({ color:0x2f6d45, roughness:.95 })
+    ;[[-17,-22],[-17,22],[17,-22],[17,22],[-22,-17],[22,-17],[-22,17],[22,17]].forEach(([x,z])=>{
+      const tr = new THREE.Mesh(new THREE.CylinderGeometry(.2,.26,2.2), trunkMat)
+      tr.position.set(x,1.6,z); scene.add(tr)
+      const cr = new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8), leafMat)
+      cr.position.set(x,3.4,z); cr.scale.y = .82; scene.add(cr)
+    })
+
+    /* ---------- street lighting ---------- */
+    const streetLamps = []
+    const poleMat = new THREE.MeshStandardMaterial({ color:0x555d64, roughness:.8 })
+    const addStreetLamp = (x,z,rotY) => {
+      const g = new THREE.Group()
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.15,.2,9), poleMat)
+      pole.position.y = 4.5; g.add(pole)
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.6,.16,.16), poleMat)
+      arm.position.set(1.3,8.9,0); g.add(arm)
+      const headMat = new THREE.MeshStandardMaterial({
+        color:0xfff0cf, emissive:0xffcf7a, emissiveIntensity:1.6, roughness:.5 })
+      const head = new THREE.Mesh(new THREE.BoxGeometry(1.5,.3,.7), headMat)
+      head.position.set(2.5,8.75,0); g.add(head)
+      const glow = makeGlow(0xffc879, 7); glow.position.set(2.5,8.6,0); glow.material.opacity = .55
+      g.add(glow)
+      /* warm pool of light on the road surface */
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(13,13),
+        new THREE.MeshBasicMaterial({ map: glowTexture(), color:0xffc879, transparent:true,
+          opacity:.20, blending: THREE.AdditiveBlending, depthWrite:false }))
+      pool.rotation.x = -Math.PI/2; pool.position.set(2.5,.05,0); g.add(pool)
+      g.position.set(x,0,z); g.rotation.y = rotY
+      scene.add(g)
+      streetLamps.push({ head, glow, pool })
+    }
+    ;[-30,-52,-74].forEach(z=>{ addStreetLamp(-14.5,z,0); addStreetLamp(14.5,z,Math.PI) })
+    ;[30,52,74].forEach(z=>{ addStreetLamp(-14.5,z,0); addStreetLamp(14.5,z,Math.PI) })
+    ;[-30,-52,-74].forEach(x=>{ addStreetLamp(x,-14.5,Math.PI/2); addStreetLamp(x,14.5,-Math.PI/2) })
+    ;[30,52,74].forEach(x=>{ addStreetLamp(x,-14.5,Math.PI/2); addStreetLamp(x,14.5,-Math.PI/2) })
+
+    /* A few real lights so the scene has genuine falloff, rather than
+       relying on emissive materials alone. Kept to four for weak GPUs. */
+    ;[[-26,-26],[26,-26],[-26,26],[26,26]].forEach(([x,z])=>{
+      const l = new THREE.PointLight(0xffc879, 26, 60, 2)
+      l.position.set(x,9,z); scene.add(l)
+    })
+
+    /* ---------- traffic signals ----------
+       Bigger heads, a hood over each lamp, an emissive lens and an additive
+       glow sprite. The active aspect should be unmistakable at a glance from
+       across the room, which the old flat-coloured spheres were not. */
+    const lampMeshes = []
+    const pedSignals = []
+    const addSignal = (x, z, axis, facing) => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,6.2),
+        new THREE.MeshStandardMaterial({ color: 0x6f777c, roughness:.7 }))
+      pole.position.set(x,3.1,z); scene.add(pole)
+
+      const head = new THREE.Group()
+      head.position.set(x,5.9,z); head.rotation.y = facing
+      const box = new THREE.Mesh(new THREE.BoxGeometry(1.5,3.5,.85),
+        new THREE.MeshStandardMaterial({ color: 0x11161a, roughness:.85 }))
+      head.add(box)
+      const backplate = new THREE.Mesh(new THREE.BoxGeometry(2.2,4.2,.12),
+        new THREE.MeshStandardMaterial({ color: 0x0d1114, roughness:1 }))
+      backplate.position.z = -.5; head.add(backplate)
+
+      const colors = [0xff4b4b,0xffc23d,0x3ce87c]
+      colors.forEach((c, idx) => {
+        const y = 1.12 - idx*1.12
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(.42,20),
+          new THREE.MeshStandardMaterial({ color:0x1b2126, emissive:c, emissiveIntensity:0, roughness:.35 }))
+        lens.position.set(0,y,.44); head.add(lens)
+        /* hood, so an unlit lamp still reads as a lamp */
+        const hood = new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.42,16,1,true,0,Math.PI),
+          new THREE.MeshStandardMaterial({ color:0x0b0e11, roughness:1, side:THREE.DoubleSide }))
+        hood.rotation.set(Math.PI/2,0,0); hood.position.set(0,y+.12,.58); head.add(hood)
+        const glow = makeGlow(c, 3.1); glow.position.set(0,y,.75); head.add(glow)
+        lampMeshes.push({ lens, glow, axis, idx, color:c })
+      })
+      scene.add(head)
+
+      /* pedestrian head on the same pole: the green figure shows exactly when
+         the parallel crossing is safe, which is what the walkers obey */
+      const ped = new THREE.Group()
+      ped.position.set(x,3.3,z); ped.rotation.y = facing
+      const pbox = new THREE.Mesh(new THREE.BoxGeometry(.9,1.5,.5),
+        new THREE.MeshStandardMaterial({ color:0x11161a, roughness:.9 }))
+      ped.add(pbox)
+      const plens = new THREE.Mesh(new THREE.CircleGeometry(.3,16),
+        new THREE.MeshStandardMaterial({ color:0x1b2126, emissive:0xff4b4b, emissiveIntensity:.9, roughness:.4 }))
+      plens.position.z = .27; ped.add(plens)
+      const pglow = makeGlow(0xffffff, 1.9); pglow.position.z = .45; ped.add(pglow)
+      scene.add(ped)
+      pedSignals.push({ lens:plens, glow:pglow, axis })
+    }
+    addSignal(-13.5,-13.5,'NS',Math.PI/4); addSignal(13.5,13.5,'NS',Math.PI*1.25)
+    addSignal(-13.5,13.5,'EW',Math.PI*.75); addSignal(13.5,-13.5,'EW',Math.PI*1.75)
+
+    /* ---------- pedestrians ----------
+       They wait on the kerb and only step out when their crossing is safe, so
+       the crowd is a live readout of the signal plan rather than set dressing. */
+    const people = []
+    CROSSWALKS.forEach((cw, ci) => {
+      for(let i=0;i<5;i++){
+        const g = makePerson(ci*5+i)
+        const dir = i % 2 === 0 ? 1 : -1
+        g.userData.cw = cw
+        g.userData.dir = dir
+        g.userData.t = dir > 0 ? -0.06 - i*0.05 : 1.06 + i*0.05
+        g.userData.speed = 0.16 + (i % 3) * 0.035
+        g.userData.lane = (i - 2) * 0.9
+        scene.add(g)
+        people.push(g)
+      }
+    })
 
     const pools = {}
     const dirConfig = {
-      north: { lane:-4, axis:'z', sign:1, start:-14, rot:0 },
-      south: { lane:4, axis:'z', sign:-1, start:14, rot:Math.PI },
-      east:  { lane:4, axis:'x', sign:-1, start:14, rot:Math.PI/2 },
-      west:  { lane:-4, axis:'x', sign:1, start:-14, rot:-Math.PI/2 },
+      north: { lane:-4, axis:'z', sign:1, start:-17.2, rot:0 },
+      south: { lane:4, axis:'z', sign:-1, start:17.2, rot:Math.PI },
+      east:  { lane:4, axis:'x', sign:-1, start:17.2, rot:Math.PI/2 },
+      west:  { lane:-4, axis:'x', sign:1, start:-17.2, rot:-Math.PI/2 },
     }
 
     const createCar = (dir, i) => {
@@ -270,7 +512,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
 
     ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,phase:'NS',
       queues:{north:0,south:0,east:0,west:0},types:null,departPool,departQueue:[],
-      evGroup,evBody,evBeacon,evGlow,ev:null}
+      evGroup,evBody,evBeacon,evGlow,ev:null,people,pedSignals,streetLamps}
 
     const clock = new THREE.Clock(); let raf=0
     const animate=()=>{
@@ -354,11 +596,50 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const tint = new THREE.Color(0x0b1015).lerp(new THREE.Color(0x2a0f12), load)
       c.scene.background.copy(tint); c.scene.fog.color.copy(tint)
 
-      c.lampMeshes.forEach(({bulb,axis,idx,color})=>{
+      c.lampMeshes.forEach(({lens,glow,axis,idx,color})=>{
         const isAmber = c.phase === 'AMBER' && idx === 1
         const isGreen = c.phase === axis && idx === 2
         const isRed = c.phase !== 'AMBER' && c.phase !== axis && idx === 0
-        bulb.material.color.setHex(isAmber||isGreen||isRed?color:0x22282c)
+        const on = isAmber || isGreen || isRed
+        lens.material.emissiveIntensity = on ? 2.4 : 0.04
+        lens.material.color.setHex(on ? color : 0x1b2126)
+        /* ease the glow instead of snapping it, so a change of phase reads as
+           an event rather than a flicker */
+        glow.material.opacity += ((on ? .95 : 0) - glow.material.opacity) * Math.min(1, dt*12)
+      })
+
+      /* pedestrian aspect: walk when the parallel traffic is stopped */
+      c.pedSignals.forEach(({lens,glow,axis})=>{
+        const walk = c.phase !== 'AMBER' && c.phase !== axis
+        lens.material.emissive.setHex(walk ? 0x8affc0 : 0xff4b4b)
+        lens.material.emissiveIntensity = walk ? 2.0 : 1.0
+        glow.material.color.setHex(walk ? 0x8affc0 : 0xff4b4b)
+        glow.material.opacity += ((walk ? .5 : .22) - glow.material.opacity) * Math.min(1, dt*10)
+      })
+
+      /* people: cross only while their arm is stopped, otherwise hold the kerb */
+      c.people.forEach(pr=>{
+        const u = pr.userData, cw = u.cw
+        const safe = c.phase === cw.safeOn
+        const inRoad = u.t > 0.02 && u.t < 0.98
+        /* someone already in the carriageway finishes crossing rather than
+           freezing mid-road when the phase changes */
+        const moving = safe || inRoad
+        if(moving) u.t += u.dir * u.speed * dt
+        if(u.t > 1.12){ u.t = -0.06; u.dir = 1 }
+        if(u.t < -0.12){ u.t = 1.06; u.dir = -1 }
+
+        const clamped = Math.min(1.14, Math.max(-0.14, u.t))
+        const along = cw.from + (cw.to - cw.from) * clamped
+        if(cw.axis === 'x') pr.position.set(along, .5, cw.fixed + u.lane*0.55)
+        else pr.position.set(cw.fixed + u.lane*0.55, .5, along)
+        pr.rotation.y = cw.axis === 'x'
+          ? (u.dir > 0 ? Math.PI/2 : -Math.PI/2)
+          : (u.dir > 0 ? 0 : Math.PI)
+
+        const swing = moving ? Math.sin(t*7 + u.phase) : 0
+        u.legs.rotation.x = swing * .5
+        u.torso.position.y = .93 + (moving ? Math.abs(Math.sin(t*7 + u.phase))*.04 : 0)
       })
       c.renderer.render(c.scene,c.camera)
     }
