@@ -1241,70 +1241,214 @@ function simulateCorridor(scenario, incident, steps, seed, mix, profile){
   return { steps, seed, scenario, incident, fixed:run('fixed'), smart:run('smart') }
 }
 
+/* Corridor renderer.
+
+   The 3D twins get the detail treatment; this panel was still flat grey
+   rectangles, which made the most important claim in the whole demo -- that
+   emptying a junction into a full link only moves the jam -- the least legible
+   thing on the page. Same principles applied in 2D: a lit sky to sit against,
+   surfaces with depth, vehicles you can tell apart, and glow on the things that
+   carry meaning (the signals, and the link when it backs up). */
+
+const CORR_H = 210
+
+/* Vehicle bodies drawn side-on. Silhouette carries the class, exactly as in
+   the 3D scene, so the two views agree with each other. */
+function drawVehicle(x, kind, px, py, len, horizontal, lit){
+  const v = VEHICLES[kind]
+  const body = '#'+v.color.toString(16).padStart(6,'0')
+  const thick = kind === 'bus' ? 12 : kind === 'bike' ? 7 : kind === 'auto' ? 10 : 10
+  const w = horizontal ? len : thick
+  const h = horizontal ? thick : len
+  const x0 = px - w/2, y0 = py - h/2
+
+  x.save()
+  /* contact shadow so the vehicle sits on the road rather than floating */
+  x.fillStyle = 'rgba(0,0,0,.38)'
+  x.beginPath(); x.roundRect(x0+1.5, y0+2.5, w, h, 3); x.fill()
+
+  x.fillStyle = body
+  x.beginPath(); x.roundRect(x0, y0, w, h, kind === 'bus' ? 2.5 : 3); x.fill()
+
+  /* glazing: a band for the bus, a cabin for the car, a canopy for the auto */
+  x.fillStyle = 'rgba(20,34,46,.85)'
+  if(kind === 'bus'){
+    if(horizontal) x.fillRect(x0+len*.12, y0+2.5, len*.76, 4)
+    else           x.fillRect(x0+2.5, y0+len*.12, 4, len*.76)
+  } else if(kind === 'car'){
+    if(horizontal) x.fillRect(x0+len*.30, y0+2, len*.42, 3.2)
+    else           x.fillRect(x0+2, y0+len*.30, 3.2, len*.42)
+  } else if(kind === 'auto'){
+    x.fillStyle = 'rgba(14,18,22,.9)'
+    if(horizontal) x.fillRect(x0+len*.15, y0, len*.7, 3.4)
+    else           x.fillRect(x0, y0+len*.15, 3.4, len*.7)
+  } else {
+    /* rider on the two-wheeler */
+    x.fillStyle = '#3c4a58'
+    x.beginPath(); x.arc(px, py - (horizontal?0:1), 2.4, 0, 7); x.fill()
+  }
+
+  /* headlight wash, only for vehicles that are moving through the link */
+  if(lit && horizontal){
+    x.globalCompositeOperation = 'lighter'
+    const g = x.createRadialGradient(px-len*.6, py, 0, px-len*.6, py, 16)
+    g.addColorStop(0, 'rgba(255,214,150,.5)')
+    g.addColorStop(1, 'rgba(255,214,150,0)')
+    x.fillStyle = g
+    x.beginPath(); x.arc(px-len*.6, py, 16, 0, 7); x.fill()
+  }
+  x.restore()
+}
+
 function CorridorView({ frame, title, tone }){
   const ref = useRef(null)
+  /* The canvas can measure 0 wide on the first effect, before layout has
+     settled, which leaves it blank until the next frame arrives. Track the
+     observed width and redraw whenever it changes. */
+  const [width, setWidth] = useState(0)
+  useEffect(()=>{
+    const c = ref.current; if(!c) return
+    const ro = new ResizeObserver(()=> setWidth(c.clientWidth))
+    ro.observe(c)
+    setWidth(c.clientWidth)
+    return ()=> ro.disconnect()
+  },[])
+
   useEffect(()=>{
     const c = ref.current; if(!c || !frame) return
     const dpr = Math.min(window.devicePixelRatio||1, 2)
-    const W = c.clientWidth, H = 190
+    const W = width || c.clientWidth, H = CORR_H
+    if(W < 2) return
     c.width = W*dpr; c.height = H*dpr
     const x = c.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0)
     x.clearRect(0,0,W,H)
 
-    const jA = W*0.30, jB = W*0.74, midY = H*0.56, roadH = 26
-    /* corridor road */
-    x.fillStyle = '#2b333b'; x.fillRect(0, midY-roadH/2, W, roadH)
-    /* cross roads */
-    ;[jA,jB].forEach(jx=>{ x.fillStyle='#2b333b'; x.fillRect(jx-roadH/2, 12, roadH, H-24) })
-    /* lane dashes */
-    x.strokeStyle='#4c565f'; x.setLineDash([9,9]); x.lineWidth=1.4
+    const jA = W*0.30, jB = W*0.74, midY = H*0.60, roadH = 34
+    const roadTop = midY-roadH/2, roadBot = midY+roadH/2
+    const pct = Math.min(100, frame.linkPct)
+
+    /* ---------- sky ---------- */
+    const sky = x.createLinearGradient(0,0,0,midY)
+    sky.addColorStop(0,'#0a1017'); sky.addColorStop(.7,'#16222e'); sky.addColorStop(1,'#2a3340')
+    x.fillStyle = sky; x.fillRect(0,0,W,midY)
+
+    /* ---------- skyline, with lit windows ---------- */
+    let seed = 7
+    const rnd = () => { seed = (seed*9301+49297)%233280; return seed/233280 }
+    x.fillStyle = '#141d27'
+    const skyline = []
+    for(let bx=-20; bx<W+40; bx += 26+rnd()*22){
+      const bw = 20+rnd()*26, bh = 26+rnd()*54
+      skyline.push([bx,bw,bh]); x.fillRect(bx, midY-roadH/2-bh-14, bw, bh)
+    }
+    skyline.forEach(([bx,bw,bh])=>{
+      for(let wy=midY-roadH/2-bh-8; wy<midY-roadH/2-20; wy+=9){
+        for(let wx=bx+3; wx<bx+bw-4; wx+=7){
+          if(rnd()>.55){ x.fillStyle = rnd()>.4 ? 'rgba(255,209,150,.5)' : 'rgba(150,190,235,.28)'
+            x.fillRect(wx, wy, 3, 4) }
+        }
+      }
+    })
+
+    /* ---------- ground and footpaths ---------- */
+    x.fillStyle = '#1b2229'; x.fillRect(0, midY-roadH/2-14, W, H-(midY-roadH/2-14))
+    x.fillStyle = '#333b43'
+    x.fillRect(0, roadTop-9, W, 9); x.fillRect(0, roadBot, W, 9)
+
+    /* ---------- asphalt ---------- */
+    const tar = x.createLinearGradient(0, roadTop, 0, roadBot)
+    tar.addColorStop(0,'#3d444b'); tar.addColorStop(.5,'#333a41'); tar.addColorStop(1,'#2b3239')
+    x.fillStyle = tar; x.fillRect(0, roadTop, W, roadH)
+    ;[jA,jB].forEach(jx=>{ x.fillStyle='#333a41'; x.fillRect(jx-roadH/2, 14, roadH, H-28) })
+
+    /* ---------- lane paint ---------- */
+    x.strokeStyle='rgba(201,162,39,.85)'; x.setLineDash([12,10]); x.lineWidth=1.6
     x.beginPath(); x.moveTo(0,midY); x.lineTo(W,midY); x.stroke(); x.setLineDash([])
 
-    /* link fill indicator */
-    const pct = Math.min(100, frame.linkPct)
-    const lx0 = jA+roadH/2, lx1 = jB-roadH/2
-    x.fillStyle = pct>92 ? 'rgba(239,94,94,.22)' : pct>65 ? 'rgba(240,189,88,.16)' : 'rgba(98,207,251,.10)'
-    x.fillRect(lx0, midY-roadH/2, (lx1-lx0)*pct/100, roadH)
+    /* zebra crossings on the approach to each junction */
+    x.fillStyle='rgba(238,243,246,.82)'
+    ;[jA,jB].forEach(jx=>{
+      for(let zy=roadTop+3; zy<roadBot-2; zy+=6) {
+        x.fillRect(jx-roadH/2-11, zy, 7, 3.4)
+        x.fillRect(jx+roadH/2+4,  zy, 7, 3.4)
+      }
+    })
 
+    /* ---------- link occupancy ---------- */
+    const lx0 = jA+roadH/2, lx1 = jB-roadH/2
+    const heavy = pct>92, warm = pct>65
+    const fill = x.createLinearGradient(lx0, 0, lx1, 0)
+    if(heavy){ fill.addColorStop(0,'rgba(239,94,94,.34)'); fill.addColorStop(1,'rgba(239,94,94,.16)') }
+    else if(warm){ fill.addColorStop(0,'rgba(240,189,88,.26)'); fill.addColorStop(1,'rgba(240,189,88,.10)') }
+    else { fill.addColorStop(0,'rgba(98,207,251,.18)'); fill.addColorStop(1,'rgba(98,207,251,.06)') }
+    x.fillStyle = fill
+    x.fillRect(lx0, roadTop, (lx1-lx0)*pct/100, roadH)
+
+    /* a full link is the whole point of this panel, so it glows */
+    if(heavy){
+      x.save(); x.shadowColor='rgba(255,90,90,.9)'; x.shadowBlur=18
+      x.strokeStyle='rgba(255,120,120,.85)'; x.lineWidth=2
+      x.strokeRect(lx0, roadTop+1, lx1-lx0, roadH-2); x.restore()
+    }
+
+    /* ---------- queues and link traffic ---------- */
     const draw = (list, x0, y0, dx, dy) => {
       let cur = 0
       list.slice(0,26).forEach(t=>{
         const k = typeof t === 'string' ? t : t.k
-        const v = VEHICLES[k]; const len = v.len*1.5
+        const len = VEHICLES[k].len*1.5
         cur += len
-        const px = x0 + dx*(cur-len/2), py = y0 + dy*(cur-len/2)
-        x.fillStyle = '#'+v.color.toString(16).padStart(6,'0')
-        if(dx) x.fillRect(px-len/2, py-4.5, len, 9)
-        else   x.fillRect(px-4.5, py-len/2, 9, len)
+        drawVehicle(x, k, x0 + dx*(cur-len/2), y0 + dy*(cur-len/2), len, dx!==0, false)
       })
     }
-    /* queues */
-    draw(frame.types.upMain,   jA-roadH/2, midY-7, -1, 0)
-    draw(frame.types.downMain, jB-roadH/2, midY-7, -1, 0)
-    draw(frame.types.upCross,  jA, 14, 0, 1)
-    draw(frame.types.downCross,jB, 14, 0, 1)
-    /* link vehicles positioned by progress */
+    draw(frame.types.upMain,   jA-roadH/2-12, midY-8, -1, 0)
+    draw(frame.types.downMain, jB-roadH/2-12, midY-8, -1, 0)
+    /* Cross traffic queues back *away* from the stop line, so the first
+       vehicle sits at the junction and the tail grows towards the top of the
+       frame. Drawing it downwards from the canvas edge put the head of the
+       queue in the wrong place and made a long queue look like a short one. */
+    draw(frame.types.upCross,  jA, roadTop-14, 0, -1)
+    draw(frame.types.downCross,jB, roadTop-14, 0, -1)
     frame.types.link.forEach(v=>{
-      const vv = VEHICLES[v.k], len = vv.len*1.5
-      const px = lx0 + (lx1-lx0)*Math.min(1,Math.max(0,v.p))
-      x.fillStyle = '#'+vv.color.toString(16).padStart(6,'0')
-      x.fillRect(px-len/2, midY+2, len, 9)
+      const len = VEHICLES[v.k].len*1.5
+      drawVehicle(x, v.k, lx0 + (lx1-lx0)*Math.min(1,Math.max(0,v.p)), midY+9, len, true, true)
     })
-    /* signals */
-    const lamp=(cx,cy,on,col)=>{ x.beginPath(); x.arc(cx,cy,4.6,0,7); x.fillStyle=on?col:'#232b32'; x.fill() }
-    ;[[jA,frame.phaseA],[jB,frame.phaseB]].forEach(([jx,ph])=>{
-      lamp(jx-roadH/2-11, midY-15, ph==='THROUGH', '#43cf7c')
-      lamp(jx-roadH/2-11, midY-3,  ph==='AMBER',   '#e5b94d')
-      lamp(jx-roadH/2-11, midY+9,  ph==='CROSS',   '#e34f4f')
-    })
-    /* labels */
-    x.fillStyle='#93a8ba'; x.font='600 11px system-ui'; x.textAlign='center'
-    x.fillText(CORRIDOR.up.name,   jA, H-6)
-    x.fillText(CORRIDOR.down.name, jB, H-6)
-    x.fillStyle= pct>92?'#ff8f8f':'#7f93a5'; x.font='10px system-ui'
-    x.fillText(`link ${CORRIDOR.linkKm} km · ${frame.linkPcu} PCU · ${pct}% full${frame.spill?'  ⚠ SPILLBACK':''}`,
-      (lx0+lx1)/2, midY-roadH/2-7)
-  },[frame])
+
+    /* ---------- signal heads ---------- */
+    const head = (cx, cy, ph) => {
+      x.fillStyle = '#0d1216'
+      x.beginPath(); x.roundRect(cx-7, cy-20, 14, 40, 4); x.fill()
+      x.strokeStyle='rgba(255,255,255,.10)'; x.lineWidth=1; x.stroke()
+      const lamp = (ly, on, col) => {
+        x.save()
+        if(on){ x.shadowColor = col; x.shadowBlur = 14 }
+        x.beginPath(); x.arc(cx, ly, 4.6, 0, 7)
+        x.fillStyle = on ? col : '#1e262c'; x.fill()
+        x.restore()
+      }
+      lamp(cy-11, ph==='THROUGH', '#3ce87c')
+      lamp(cy,    ph==='AMBER',   '#ffc23d')
+      lamp(cy+11, ph==='CROSS',   '#ff4b4b')
+    }
+    head(jA-roadH/2-24, midY-34, frame.phaseA)
+    head(jB-roadH/2-24, midY-34, frame.phaseB)
+
+    /* ---------- labels ---------- */
+    x.fillStyle='#a9bccd'; x.font='600 11px system-ui'; x.textAlign='center'
+    x.fillText(CORRIDOR.up.name,   jA, H-7)
+    x.fillText(CORRIDOR.down.name, jB, H-7)
+
+    x.font='10px system-ui'
+    x.fillStyle = heavy ? '#ff9c9c' : warm ? '#f0c274' : '#8ba0b2'
+    x.fillText(`link ${CORRIDOR.linkKm} km · ${frame.linkPcu} PCU · ${pct}% full`,
+      (lx0+lx1)/2, roadTop-16)
+    if(frame.spill){
+      x.save(); x.shadowColor='rgba(255,80,80,.9)'; x.shadowBlur=10
+      x.fillStyle='#ff8f8f'; x.font='700 10px system-ui'
+      x.fillText('SPILLBACK — UPSTREAM GREEN IS WASTED', (lx0+lx1)/2, roadBot+22)
+      x.restore()
+    }
+  },[frame,width])
   return <div className={`corr ${tone}`}>
     <div className="corr-head"><strong>{title}</strong>
       <span>{frame?.spill ? <b className="spill">spillback — upstream green is wasted</b>
