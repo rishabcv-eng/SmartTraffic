@@ -120,6 +120,31 @@ function SignalHead({ phase, axis }) {
 /* textures and sprites for that once, then everything reuses them.    */
 /* ------------------------------------------------------------------ */
 
+/* Surface noise. Flat untextured asphalt is the single biggest reason a
+   3D scene reads as a diagram: real surfaces are never one uniform colour.
+   Cheap canvas noise breaks that up and gives the light something to catch. */
+const _noiseCache = {}
+function noiseTexture(baseHex, spread, repeat){
+  const key = `${baseHex}-${spread}-${repeat}`
+  if(_noiseCache[key]) return _noiseCache[key]
+  const S = 128
+  const c = document.createElement('canvas'); c.width = c.height = S
+  const g = c.getContext('2d')
+  const base = new THREE.Color(baseHex)
+  g.fillStyle = `#${base.getHexString()}`; g.fillRect(0,0,S,S)
+  for(let i=0;i<5200;i++){
+    const l = (Math.random()-.5) * spread
+    const col = base.clone().offsetHSL(0,0,l)
+    g.fillStyle = `#${col.getHexString()}`
+    g.fillRect(Math.random()*S, Math.random()*S, 1+Math.random()*2.4, 1+Math.random()*2.4)
+  }
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(repeat, repeat)
+  _noiseCache[key] = t
+  return t
+}
+
 /* Soft radial glow. Used for signal bulbs and lamp spill — far cheaper
    than a post-processing bloom pass and works on weak GPUs. */
 let _glowTex = null
@@ -203,8 +228,136 @@ function makePerson(i){
   const head = new THREE.Mesh(new THREE.SphereGeometry(.17,12,12),
     new THREE.MeshStandardMaterial({ color:0x9a6b4f, roughness:.8 }))
   head.position.y = 1.36
+  ;[legs,torso,head].forEach(m=>{ m.castShadow = true })
   g.add(legs,torso,head)
   g.userData = { legs, torso, phase: Math.random()*Math.PI*2 }
+  return g
+}
+
+/* ------------------------------------------------------------------ */
+/* Vehicle model kit.                                                  */
+/* Four classes share a road here and the whole PCU argument depends   */
+/* on telling them apart at a glance, so each gets its own silhouette  */
+/* and its own palette rather than a tinted box:                       */
+/*   two-wheeler  small, dark, visible rider                           */
+/*   auto         three wheels, yellow body, black canopy              */
+/*   car          low, four wheels, glasshouse, mixed colours          */
+/*   bus          tall and long, window band, six wheels               */
+/* Geometry and materials are built once and shared by every instance; */
+/* with ~400 pooled vehicles per scene, per-instance materials would   */
+/* dominate both memory and draw-call setup.                           */
+/* ------------------------------------------------------------------ */
+const BODY_TONES = {
+  bike: [0x2d3742, 0x6b2f33, 0x27424a],
+  auto: [0xe3b505, 0xd9a904, 0xeabf20],
+  car:  [0xdfe3e6, 0x39506b, 0x8d3f3f, 0x4a5560, 0xb9bec2],
+  bus:  [0x2f6fb5, 0xd06a2a, 0x3f7d5a],
+}
+
+let _vkit = null
+function vehicleKit(){
+  if(_vkit) return _vkit
+  const M = (o) => new THREE.MeshStandardMaterial(o)
+  const wheel = new THREE.CylinderGeometry(.34,.34,.26,14)
+  wheel.rotateZ(Math.PI/2)
+  const wheelSm = new THREE.CylinderGeometry(.3,.3,.18,12)
+  wheelSm.rotateZ(Math.PI/2)
+
+  _vkit = {
+    geo: { wheel, wheelSm, box: new THREE.BoxGeometry(1,1,1) },
+    mat: {
+      tyre:  M({ color:0x15181b, roughness:.95 }),
+      glass: M({ color:0x1d2c38, roughness:.18, metalness:.55 }),
+      trim:  M({ color:0x20262b, roughness:.8 }),
+      canopy:M({ color:0x14181c, roughness:.85 }),
+      head:  M({ color:0xfff6e0, emissive:0xffe8b8, emissiveIntensity:1.5, roughness:.4 }),
+      tail:  M({ color:0x5a1414, emissive:0xff2a2a, emissiveIntensity:1.2, roughness:.5 }),
+      rider: M({ color:0x394654, roughness:.9 }),
+      helmet:M({ color:0xd8dde1, roughness:.5 }),
+      body: Object.fromEntries(Object.entries(BODY_TONES).map(([k, tones]) =>
+        [k, tones.map(c => M({ color:c, roughness:.55, metalness:.15 }))])),
+    },
+  }
+  return _vkit
+}
+
+/* Box helper on the shared unit cube, so nothing allocates new geometry. */
+function part(kit, mat, w, h, d, x, y, z, shadow){
+  const m = new THREE.Mesh(kit.geo.box, mat)
+  m.scale.set(w,h,d); m.position.set(x,y,z)
+  if(shadow) m.castShadow = true
+  return m
+}
+
+function buildVehicle(kind, variantIdx){
+  const kit = vehicleKit()
+  const v = VEHICLES[kind]
+  const g = new THREE.Group()
+  const tones = kit.mat.body[kind]
+  const body = tones[variantIdx % tones.length]
+  const addWheel = (geo, x, y, z) => {
+    const w = new THREE.Mesh(geo, kit.mat.tyre)
+    w.position.set(x,y,z); g.add(w)
+  }
+
+  if(kind === 'bike'){
+    addWheel(kit.geo.wheelSm, 0, .3, -v.d*.34)
+    addWheel(kit.geo.wheelSm, 0, .3,  v.d*.34)
+    g.add(part(kit, body, v.w*.5, .34, v.d*.55, 0, .62, 0, true))
+    g.add(part(kit, kit.mat.trim, v.w*.95, .1, .5, 0, .92, -v.d*.3, false))   // handlebar
+    g.add(part(kit, kit.mat.rider, .46, .72, .38, 0, 1.12, v.d*.06, true))    // rider
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(.19,10,10), kit.mat.helmet)
+    helmet.position.set(0,1.6,v.d*.04); helmet.castShadow = true; g.add(helmet)
+    g.add(part(kit, kit.mat.head, .16, .12, .1, 0, .78, -v.d*.46, false))
+  }
+
+  else if(kind === 'auto'){
+    addWheel(kit.geo.wheelSm, 0, .3, -v.d*.36)                                // single front
+    addWheel(kit.geo.wheelSm, -v.w*.42, .3, v.d*.3)
+    addWheel(kit.geo.wheelSm,  v.w*.42, .3, v.d*.3)
+    g.add(part(kit, body, v.w, .78, v.d*.9, 0, .74, 0, true))                 // yellow tub
+    g.add(part(kit, kit.mat.canopy, v.w*1.02, .5, v.d*.78, 0, 1.4, .12, true))// black canopy
+    g.add(part(kit, kit.mat.glass, v.w*.8, .42, .1, 0, 1.26, -v.d*.44, false))// windscreen
+    g.add(part(kit, kit.mat.canopy, .1, .62, .1, -v.w*.46, 1.35, -v.d*.34, false))
+    g.add(part(kit, kit.mat.canopy, .1, .62, .1,  v.w*.46, 1.35, -v.d*.34, false))
+    g.add(part(kit, kit.mat.head, .18, .14, .08, 0, .82, -v.d*.47, false))
+    g.add(part(kit, kit.mat.tail, .5, .12, .08, 0, .9, v.d*.46, false))
+  }
+
+  else if(kind === 'car'){
+    const y = .38
+    addWheel(kit.geo.wheel, -v.w*.44, .34, -v.d*.31)
+    addWheel(kit.geo.wheel,  v.w*.44, .34, -v.d*.31)
+    addWheel(kit.geo.wheel, -v.w*.44, .34,  v.d*.31)
+    addWheel(kit.geo.wheel,  v.w*.44, .34,  v.d*.31)
+    g.add(part(kit, body, v.w, .62, v.d, 0, y+.28, 0, true))                  // lower body
+    g.add(part(kit, body, v.w*.9, .46, v.d*.5, 0, y+.78, .18, true))          // cabin
+    g.add(part(kit, kit.mat.glass, v.w*.92, .34, v.d*.46, 0, y+.8, .16, false))
+    g.add(part(kit, kit.mat.head, .34, .14, .08, -v.w*.3, y+.3, -v.d*.5, false))
+    g.add(part(kit, kit.mat.head, .34, .14, .08,  v.w*.3, y+.3, -v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .34, .14, .08, -v.w*.3, y+.34, v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .34, .14, .08,  v.w*.3, y+.34, v.d*.5, false))
+  }
+
+  else { // bus
+    const h = v.h
+    ;[-v.d*.34, v.d*.02, v.d*.36].forEach(z=>{
+      addWheel(kit.geo.wheel, -v.w*.44, .34, z)
+      addWheel(kit.geo.wheel,  v.w*.44, .34, z)
+    })
+    g.add(part(kit, body, v.w, h, v.d, 0, h/2 + .34, 0, true))
+    /* window band all the way down the flank: the clearest bus cue */
+    g.add(part(kit, kit.mat.glass, v.w*1.01, .86, v.d*.9, 0, h*.78, .1, false))
+    g.add(part(kit, kit.mat.glass, v.w*.9, .9, .12, 0, h*.72, -v.d*.5, false))
+    g.add(part(kit, kit.mat.trim, v.w*1.02, .16, v.d*.96, 0, h*.5, 0, false))
+    g.add(part(kit, kit.mat.head, .7, .18, .1, 0, h*.98, -v.d*.49, false))    // route board
+    g.add(part(kit, kit.mat.head, .36, .16, .08, -v.w*.3, .62, -v.d*.5, false))
+    g.add(part(kit, kit.mat.head, .36, .16, .08,  v.w*.3, .62, -v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .36, .16, .08, -v.w*.3, .7, v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .36, .16, .08,  v.w*.3, .7, v.d*.5, false))
+  }
+
+  g.visible = false
   return g
 }
 
@@ -217,30 +370,57 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     if (!host) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x0b1015)
-    scene.fog = new THREE.Fog(0x0b1015, 55, 150)
+    scene.background = new THREE.Color(0x0e141a)
+    scene.fog = new THREE.Fog(0x0e141a, 62, 168)
     const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 250)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    /* Filmic tone mapping and a correct output colour space. Without these,
+       three.js renders linear values straight to screen, which is what makes
+       an untouched scene look flat and plasticky. */
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.15
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     host.innerHTML = ''
     host.appendChild(renderer.domElement)
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x27323a, 2.2))
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3)
-    sun.position.set(30, 50, 20)
+    /* Dusk lighting: cool skylight bounced off the ground, one warm key that
+       casts the shadows, and a dim cool fill so shadowed faces keep some
+       shape instead of going flat black. */
+    scene.add(new THREE.HemisphereLight(0x93b4d6, 0x35302c, .85))
+    scene.add(new THREE.AmbientLight(0x4a5a68, .18))
+    const sun = new THREE.DirectionalLight(0xffd9b0, 1.45)
+    sun.position.set(42, 58, 26)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(1024, 1024)
+    sun.shadow.camera.near = 10
+    sun.shadow.camera.far = 190
+    sun.shadow.camera.left = -70; sun.shadow.camera.right = 70
+    sun.shadow.camera.top = 70;   sun.shadow.camera.bottom = -70
+    sun.shadow.bias = -0.0012
+    sun.shadow.normalBias = 0.03
     scene.add(sun)
+    const fill = new THREE.DirectionalLight(0x8fb0d8, .35)
+    fill.position.set(-35, 26, -30)
+    scene.add(fill)
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x20262b, roughness: 1 }))
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180),
+      new THREE.MeshStandardMaterial({ map: noiseTexture(0x22282d, .10, 14), roughness: 1 }))
     ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
     scene.add(ground)
 
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x373d42, roughness: .95 })
+    const roadMat = new THREE.MeshStandardMaterial({
+      map: noiseTexture(0x3a4045, .07, 9), roughness: .92, metalness: .02 })
     const ns = new THREE.Mesh(new THREE.PlaneGeometry(24, 150), roadMat)
-    ns.rotation.x = -Math.PI / 2; ns.position.y = .01; scene.add(ns)
+    ns.rotation.x = -Math.PI / 2; ns.position.y = .01; ns.receiveShadow = true; scene.add(ns)
     const ew = new THREE.Mesh(new THREE.PlaneGeometry(150, 24), roadMat)
-    ew.rotation.x = -Math.PI / 2; ew.position.y = .012; scene.add(ew)
+    ew.rotation.x = -Math.PI / 2; ew.position.y = .012; ew.receiveShadow = true; scene.add(ew)
 
-    const markMat = new THREE.MeshBasicMaterial({ color: 0xd6d8d9 })
+    /* Road paint is worn and lit by the scene, not self-illuminated. */
+    const markMat = new THREE.MeshStandardMaterial({ color: 0xb9bdbd, roughness: .8 })
     const stripe = (x, z, w, d) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), markMat)
       m.rotation.x = -Math.PI / 2; m.position.set(x, .026, z); scene.add(m)
@@ -251,11 +431,12 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     stripe(-16.3, 0, .45, 19); stripe(16.3, 0, .45, 19)
 
     /* ---------- kerbs and footpaths ---------- */
-    const kerbMat = new THREE.MeshStandardMaterial({ color: 0x5a6169, roughness: .95 })
-    const pathMat = new THREE.MeshStandardMaterial({ color: 0x4a5158, roughness: 1 })
+    const kerbMat = new THREE.MeshStandardMaterial({ color: 0x6b7278, roughness: .9 })
+    const pathMat = new THREE.MeshStandardMaterial({
+      map: noiseTexture(0x4e555c, .09, 10), roughness: 1 })
     ;[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
       const foot = new THREE.Mesh(new THREE.BoxGeometry(53,.5,53), pathMat)
-      foot.position.set(sx*38.5, .25, sz*38.5); scene.add(foot)
+      foot.position.set(sx*38.5, .25, sz*38.5); foot.receiveShadow = true; scene.add(foot)
       const k1 = new THREE.Mesh(new THREE.BoxGeometry(53,.62,.7), kerbMat)
       k1.position.set(sx*38.5, .31, sz*12.35); scene.add(k1)
       const k2 = new THREE.Mesh(new THREE.BoxGeometry(.7,.62,53), kerbMat)
@@ -263,13 +444,27 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     })
 
     /* ---------- zebra crossings on all four arms ---------- */
-    const zebraMat = new THREE.MeshBasicMaterial({ color: 0xeef1f3 })
+    /* Zebra crossings.
+       Wide, bright bars with a faint emissive lift so they stay readable at
+       dusk, plus a soft light panel beneath the crossing. The crossing is the
+       thing a viewer needs to find first to understand where people walk, so
+       it is deliberately the brightest paint on the road. */
+    const zebraMat = new THREE.MeshStandardMaterial({
+      color: 0xf4f7f8, roughness: .55, emissive: 0xdfe8ee, emissiveIntensity: .32 })
+    const zebraGlowMat = new THREE.MeshBasicMaterial({
+      map: glowTexture(), color: 0xbfd8ea, transparent: true, opacity: .13,
+      blending: THREE.AdditiveBlending, depthWrite: false })
     const zebra = (x,z,horizontal) => {
-      for(let o=-11;o<=11;o+=2.2){
-        const g = horizontal ? new THREE.PlaneGeometry(1.15,4.2) : new THREE.PlaneGeometry(4.2,1.15)
+      /* wash of light marking the crossing zone */
+      const pad = new THREE.Mesh(
+        horizontal ? new THREE.PlaneGeometry(30,11) : new THREE.PlaneGeometry(11,30), zebraGlowMat)
+      pad.rotation.x = -Math.PI/2; pad.position.set(x,.028,z); scene.add(pad)
+      for(let o=-10.4;o<=10.4;o+=2.6){
+        const g = horizontal ? new THREE.PlaneGeometry(1.5,5.2) : new THREE.PlaneGeometry(5.2,1.5)
         const m = new THREE.Mesh(g, zebraMat)
         m.rotation.x = -Math.PI/2
-        m.position.set(horizontal ? x+o : x, .03, horizontal ? z : z+o)
+        m.position.set(horizontal ? x+o : x, .042, horizontal ? z : z+o)
+        m.receiveShadow = true
         scene.add(m)
       }
     }
@@ -295,7 +490,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({
         map, emissiveMap, emissive: 0xffffff, emissiveIntensity: .85, roughness: .9,
       }))
-      b.position.set(x, h/2 + .5, z); scene.add(b)
+      b.position.set(x, h/2 + .5, z); b.castShadow = true; b.receiveShadow = true; scene.add(b)
       /* roof slab reads as a parapet and stops the facade texture wrapping oddly */
       const roof = new THREE.Mesh(new THREE.BoxGeometry(w+.6,.8,d+.6),
         new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness:1 }))
@@ -309,7 +504,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const tr = new THREE.Mesh(new THREE.CylinderGeometry(.2,.26,2.2), trunkMat)
       tr.position.set(x,1.6,z); scene.add(tr)
       const cr = new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8), leafMat)
-      cr.position.set(x,3.4,z); cr.scale.y = .82; scene.add(cr)
+      cr.position.set(x,3.4,z); cr.scale.y = .82; cr.castShadow = true; scene.add(cr)
     })
 
     /* ---------- street lighting ---------- */
@@ -430,30 +625,8 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const c = new THREE.Group()
       const variants = {}
       VKEYS.forEach(k=>{
-        const v = VEHICLES[k]
-        const g = new THREE.Group()
-        const shade = [0,-.10,.10][i%3]
-        const col = new THREE.Color(v.color).offsetHSL(0,0,shade)
-        const body = new THREE.Mesh(new THREE.BoxGeometry(v.w,v.h,v.d),
-          new THREE.MeshStandardMaterial({ color:col, roughness:.7 }))
-        body.position.y = v.h/2 + .18
-        g.add(body)
-        if(k==='bus'){
-          const win = new THREE.Mesh(new THREE.BoxGeometry(v.w+.02,.9,v.d*.8),
-            new THREE.MeshStandardMaterial({ color:0x22303c, roughness:.4 }))
-          win.position.y = v.h*.72; g.add(win)
-        }
-        if(k==='auto'){
-          const roof = new THREE.Mesh(new THREE.BoxGeometry(v.w*.95,.22,v.d*.9),
-            new THREE.MeshStandardMaterial({ color:0x1f2a33 }))
-          roof.position.y = v.h + .28; g.add(roof)
-        }
-        if(k==='bike'){
-          const rider = new THREE.Mesh(new THREE.BoxGeometry(.5,.75,.5),
-            new THREE.MeshStandardMaterial({ color:0x3d4a57 }))
-          rider.position.y = v.h + .5; g.add(rider)
-        }
-        g.visible=false; c.add(g); variants[k]=g
+        const g = buildVehicle(k, i)
+        c.add(g); variants[k] = g
       })
       c.visible=false
       c.userData={dir,target:new THREE.Vector3(),variants}
@@ -463,16 +636,12 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     Object.keys(dirConfig).forEach(dir => pools[dir] = Array.from({length:24},(_,i)=>createCar(dir,i)))
 
     /* ---------- departing vehicles: they drive through, not vanish ---------- */
-    const departPool = Array.from({length:40}, ()=>{
+    const departPool = Array.from({length:40}, (_,i)=>{
       const c = new THREE.Group()
       const variants = {}
       VKEYS.forEach(k=>{
-        const v = VEHICLES[k]
-        const g = new THREE.Group()
-        const body = new THREE.Mesh(new THREE.BoxGeometry(v.w,v.h,v.d),
-          new THREE.MeshStandardMaterial({ color:v.color, roughness:.7 }))
-        body.position.y = v.h/2 + .18
-        g.add(body); g.visible=false; c.add(g); variants[k]=g
+        const g = buildVehicle(k, i)
+        c.add(g); variants[k] = g
       })
       c.visible=false
       c.userData={active:false,dir:'north',kind:'car',dist:0,speed:0,variants}
@@ -485,6 +654,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     const evBody = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.6,5.2),
       new THREE.MeshStandardMaterial({ color: 0xf2f4f6, roughness:.5 }))
     evBody.position.y = 1.0
+    evBody.castShadow = true
     evGroup.add(evBody)
     const evCab = new THREE.Mesh(new THREE.BoxGeometry(2.1,1.0,1.6),
       new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness:.4 }))
@@ -592,8 +762,10 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       }
 
       /* congestion glow — the scene itself reddens as the junction chokes */
+      /* A gentle warm haze as the junction chokes. The old version drove the
+         whole sky to red, which read as a video game rather than a street. */
       const load = Math.min(1, (c.totalQueue||0) / 26)
-      const tint = new THREE.Color(0x0b1015).lerp(new THREE.Color(0x2a0f12), load)
+      const tint = new THREE.Color(0x0e141a).lerp(new THREE.Color(0x241a1c), load * .75)
       c.scene.background.copy(tint); c.scene.fog.color.copy(tint)
 
       c.lampMeshes.forEach(({lens,glow,axis,idx,color})=>{
