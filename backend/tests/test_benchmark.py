@@ -15,7 +15,7 @@ def test_benchmark_returns_comparable_results():
         'transit-priority-v1',
         'gated-pressure-v1',
         'coordinated-pressure-v1',
-        'rl-q-learning-v1',
+        'rl-network-v2',
     }
     assert all(r['throughput'] >= 0 for r in results)
     assert all(r['peak_queue'] >= 0 for r in results)

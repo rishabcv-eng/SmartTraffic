@@ -25,11 +25,11 @@ CONTROLLERS: dict[str, type[Controller]] = {
     'transit-priority-v1': TransitPriorityController,
     'gated-pressure-v1': GatedPressureController,
     'coordinated-pressure-v1': CoordinatedPressureController,
-    'rl-q-learning-v1': RLController,
+    'rl-network-v2': RLController,
 }
 
 #: Controllers that must never be run without the safety shield in front.
-SHIELD_REQUIRED = {'rl-q-learning-v1'}
+SHIELD_REQUIRED = {'rl-network-v2'}
 
 DEFAULT_CONTROLLER = 'coordinated-pressure-v1'
 

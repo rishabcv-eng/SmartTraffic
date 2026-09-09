@@ -85,9 +85,15 @@ def test_wire_format_is_parseable_by_a_microcontroller():
 # ---------------------------------------------------------------------- RL
 
 def test_state_buckets_are_monotonic():
+    from app.controllers.rl_controller import BUCKET_EDGES
+
     assert bucket(0) == 0
-    assert bucket(7) == 1
-    assert bucket(1000) == len(__import__('app.controllers.rl_controller', fromlist=['x']).BUCKET_EDGES)
+    assert bucket(BUCKET_EDGES[0] - 1) == 0
+    assert bucket(BUCKET_EDGES[0]) == 1
+    assert bucket(10_000) == len(BUCKET_EDGES)
+    # Buckets must never go backwards as pressure rises.
+    values = [bucket(v) for v in range(0, 400, 7)]
+    assert values == sorted(values)
     assert encode(1, 100, 'NS')[2] == 0
     assert encode(1, 100, 'EW')[2] == 1
 
@@ -123,17 +129,46 @@ def test_rl_runs_are_reproducible():
 
 
 def test_the_registry_always_shields_the_learned_controller():
-    controller = build('rl-q-learning-v1')
+    controller = build('rl-network-v2')
 
     assert isinstance(controller, SafetyShield)
-    assert controller.name == 'rl-q-learning-v1+shield'
+    assert controller.name == 'rl-network-v2+shield'
 
 
 def test_the_policy_can_explain_itself():
     engine = MockTrafficEngine()
     snapshot = engine.reset(seed=3)
-    rows = RLController().explain(snapshot)
+    row = RLController().explain(snapshot)
 
-    assert len(rows) == 4
-    for row in rows:
-        assert {'junction', 'state', 'q_ns', 'q_ew', 'known_state'} <= set(row)
+    assert {'pressure_ns', 'pressure_ew', 'state', 'q_ns', 'q_ew', 'known_state'} <= set(row)
+    assert row['states_learned'] > 0
+
+
+def test_the_policy_commands_one_phase_across_the_network():
+    # Coordination is the entire point of the rewrite: independent per-junction
+    # agents were the worst controller in the benchmark by a wide margin.
+    engine = MockTrafficEngine()
+    snapshot = engine.reset(seed=3)
+    actions = RLController().choose_phases(snapshot)
+
+    assert len(set(actions.values())) == 1
+
+
+def test_the_reward_is_not_gameable_by_refusing_traffic():
+    """A queue-length reward teaches the policy to block arrivals.
+
+    Holding an approach at red lets it fill to storage, after which it refuses
+    new vehicles: the network looks emptier while serving fewer people. The
+    trained policy must not beat a plain fixed clock on that trick.
+    """
+    from app.services.scenario import ScenarioConfig, simulate
+
+    seeds = (3, 7, 11)
+    learned = [simulate(ScenarioConfig(controller='rl-network-v2', steps=140,
+                                       seed=s, scenario='rush')) for s in seeds]
+    fixed = [simulate(ScenarioConfig(controller='fixed-time', steps=140,
+                                     seed=s, scenario='rush')) for s in seeds]
+
+    learned_served = sum(r['metrics']['served_vehicles'] for r in learned)
+    fixed_served = sum(r['metrics']['served_vehicles'] for r in fixed)
+    assert learned_served >= fixed_served * 0.98

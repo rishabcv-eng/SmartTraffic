@@ -9,7 +9,7 @@
   `network-max-pressure`, `predictive-pressure-v2`, `mpc-lite-v1`,
   `transit-priority-v1` (person-weighted), `gated-pressure-v1` (capacity-aware),
   `coordinated-pressure-v1` (network-level phase, the default), and
-  `rl-q-learning-v1` (shielded).
+  `rl-network-v2` (shielded).
 - **Finite link storage with physical spillback.** An approach holds 40 vehicles;
   a green cannot discharge into a full link, and demand that cannot enter is
   counted rather than silently dropped.
@@ -62,7 +62,7 @@
   progression. `coordinated-pressure-v1` now leads on throughput and p95 in both
   regimes, though it still carries a 3.5% higher mean queue than fixed-time under
   rush. See `docs/BENCHMARKS.md`.
-- **RL quality.** `rl-q-learning-v1` is wired up and safely shielded, but 30
+- **RL quality.** `rl-network-v2` is wired up and safely shielded, but 30
   training episodes on a coarse state space is not enough; it is currently the
   weakest controller. Treat it as an integration proof, not a result.
 - Traffic-light phase validation on generated SUMO networks.

@@ -63,6 +63,10 @@ def _single_run(
         'mean_pedestrian_delay': metrics['mean_pedestrian_delay'],
         'p95_pedestrian_delay': metrics['p95_pedestrian_delay'],
         'pedestrians_served': metrics['pedestrians_served'],
+        'blocked_arrivals': metrics['blocked_arrivals'],
+        'demand_served_pct': round(
+            100.0 * metrics['served_vehicles']
+            / max(1e-9, metrics['served_vehicles'] + metrics['blocked_arrivals']), 2),
         'co2_kg': result['impact']['co2_kg'],
         'total_cost_inr': result['impact']['total_cost_inr'],
         '_metrics': metrics,
@@ -128,6 +132,8 @@ def run_benchmark_suite(
             'mean_person_delay': avg(rows, 'mean_person_delay'),
             'mean_bus_delay': avg(rows, 'mean_bus_delay'),
             'mean_pedestrian_delay': avg(rows, 'mean_pedestrian_delay'),
+            'mean_blocked_arrivals': avg(rows, 'blocked_arrivals'),
+            'mean_demand_served_pct': avg(rows, 'demand_served_pct'),
             'mean_co2_kg': avg(rows, 'co2_kg'),
         })
 
@@ -146,7 +152,19 @@ def run_benchmark_suite(
             / max(1e-9, fixed['mean_p95_vehicle_delay']), 2
         )
 
-    ranking = sorted(summary, key=lambda r: (r['mean_average_queue'], -r['mean_throughput']))
+    # Ranking on average queue alone is not safe. Once demand exceeds capacity,
+    # an approach that is held at red fills up and then *refuses* arrivals, so a
+    # controller can post a shorter queue simply by turning more traffic away at
+    # the boundary. Measured on this network, plain fixed-time blocks about 100
+    # more vehicles per run than the coordinated controller and looks better for
+    # it. So demand actually served is the first key, and queue only breaks ties
+    # among controllers that served the same share of demand. At normal demand
+    # nothing is blocked and this reduces to the old queue ranking.
+    ranking = sorted(summary, key=lambda r: (
+        -round(r['mean_demand_served_pct'], 1),
+        r['mean_average_queue'],
+        -r['mean_throughput'],
+    ))
     best = ranking[0]['controller']
 
     # City-facing translation of the winner against the fixed-time baseline,

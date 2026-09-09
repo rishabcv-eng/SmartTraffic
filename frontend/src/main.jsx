@@ -145,6 +145,25 @@ function noiseTexture(baseHex, spread, repeat){
   return t
 }
 
+/* Dusk sky. A flat background colour is the last thing that gives a 3D scene
+   away as a render; a real horizon is brighter than the zenith, and the fog
+   colour needs something to blend into. */
+let _skyTex = null
+function skyTexture(){
+  if(_skyTex) return _skyTex
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0,0,0,256)
+  grad.addColorStop(0,   '#0b1119')   // zenith
+  grad.addColorStop(0.55,'#17222e')
+  grad.addColorStop(0.82,'#2c3542')
+  grad.addColorStop(1,   '#4a4038')   // warm haze at the horizon
+  g.fillStyle = grad; g.fillRect(0,0,8,256)
+  _skyTex = new THREE.CanvasTexture(c)
+  _skyTex.colorSpace = THREE.SRGBColorSpace
+  return _skyTex
+}
+
 /* Soft radial glow. Used for signal bulbs and lamp spill — far cheaper
    than a post-processing bloom pass and works on weak GPUs. */
 let _glowTex = null
@@ -357,6 +376,17 @@ function buildVehicle(kind, variantIdx){
     g.add(part(kit, kit.mat.tail, .36, .16, .08,  v.w*.3, .7, v.d*.5, false))
   }
 
+  /* A pool of light thrown forward onto the road. Nothing sells dusk like
+     vehicles that actually light the surface in front of them. */
+  if(kind !== 'bike'){
+    const beam = new THREE.Mesh(new THREE.PlaneGeometry(v.w*2.6, v.d*1.9),
+      new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xffd9a0, transparent:true,
+        opacity:.16, blending: THREE.AdditiveBlending, depthWrite:false }))
+    beam.rotation.x = -Math.PI/2
+    beam.position.set(0, .06, -v.d*.95)
+    g.add(beam)
+  }
+
   g.visible = false
   return g
 }
@@ -371,7 +401,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0e141a)
-    scene.fog = new THREE.Fog(0x0e141a, 62, 168)
+    scene.fog = new THREE.Fog(0x14202b, 62, 172)
     const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 250)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -406,6 +436,12 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     fill.position.set(-35, 26, -30)
     scene.add(fill)
 
+    /* Sky dome, lit by nothing and drawn from the inside. */
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(230, 24, 16),
+      new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false }))
+    scene.add(sky)
+
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180),
       new THREE.MeshStandardMaterial({ map: noiseTexture(0x22282d, .10, 14), roughness: 1 }))
     ground.rotation.x = -Math.PI / 2
@@ -429,6 +465,35 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     for (let x = -68; x <= 68; x += 10) if(Math.abs(x) > 18) stripe(x, 0, 4.5, .16)
     stripe(0, -16.3, 19, .45); stripe(0, 16.3, 19, .45)
     stripe(-16.3, 0, .45, 19); stripe(16.3, 0, .45, 19)
+
+    /* Centre line in yellow, which is what actually separates the directions
+       and reads instantly as a road rather than a grey band. */
+    const centreMat = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: .75 })
+    const centre = (x,z,w,d) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w,d), centreMat)
+      m.rotation.x = -Math.PI/2; m.position.set(x,.03,z); scene.add(m)
+    }
+    for(let z=20; z<=74; z+=1){ if(z%2===0){ centre(0,z,.3,1.2); centre(0,-z,.3,1.2) } }
+    for(let x=20; x<=74; x+=1){ if(x%2===0){ centre(x,0,1.2,.3); centre(-x,0,1.2,.3) } }
+
+    /* Straight-ahead arrows on each approach lane. */
+    const arrowMat = new THREE.MeshStandardMaterial({ color: 0xb9bdbd, roughness: .8 })
+    const arrow = (x,z,rot) => {
+      const g = new THREE.Group()
+      const shaft = new THREE.Mesh(new THREE.PlaneGeometry(.5,2.4), arrowMat)
+      shaft.position.y = -.4
+      const headGeo = new THREE.BufferGeometry()
+      headGeo.setAttribute('position', new THREE.Float32BufferAttribute(
+        [-.75,1.0,0,  .75,1.0,0,  0,2.0,0], 3))
+      headGeo.computeVertexNormals()
+      const head = new THREE.Mesh(headGeo, arrowMat)
+      g.add(shaft, head)
+      g.rotation.x = -Math.PI/2
+      g.position.set(x,.03,z); g.rotation.z = rot
+      scene.add(g)
+    }
+    arrow(-4,-24,0); arrow(4,24,Math.PI)
+    arrow(-24,4,Math.PI/2); arrow(24,-4,-Math.PI/2)
 
     /* ---------- kerbs and footpaths ---------- */
     const kerbMat = new THREE.MeshStandardMaterial({ color: 0x6b7278, roughness: .9 })
@@ -850,8 +915,10 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
 
   useEffect(()=>{
     if(!ctx.current) return
-    if(mode==='bird'){ctx.current.camera.position.set(48,58,50);ctx.current.camera.lookAt(0,0,0)}
-    else {ctx.current.camera.position.set(7,4,-48);ctx.current.camera.lookAt(0,2,4)}
+    /* Three-quarter framing rather than square-on: the junction, the queue and
+       the skyline all stay in shot, which is what makes the still read well. */
+    if(mode==='bird'){ctx.current.camera.position.set(40,46,44);ctx.current.camera.lookAt(0,1,0)}
+    else {ctx.current.camera.position.set(11,5.2,-42);ctx.current.camera.lookAt(0,2.2,6)}
   },[mode])
 
   const shownPhase = phase || frame?.phase

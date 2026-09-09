@@ -24,7 +24,7 @@ curl 'localhost:8000/api/benchmark/suite?steps=180'
 | `transit-priority-v1` | Pressure measured in **people**, not vehicles. |
 | `gated-pressure-v1` | Scores the discharge a movement can *actually* achieve, capped by downstream space. |
 | `coordinated-pressure-v1` | Picks one phase for the **network**, letting a junction deviate only on an overwhelming local case. |
-| `rl-q-learning-v1` | Tabular Q-learning policy, always behind the safety shield. |
+| `rl-network-v2` | Tabular Q-learning policy, always behind the safety shield. |
 
 All runs are **shielded by default** (`SafetyShield`): minimum green, maximum
 green, a guaranteed pedestrian wait, and fault fallback. Pass `shielded=false`
@@ -47,7 +47,7 @@ Pooled over seeds `[3, 7, 11, 19, 29]`, 180 ticks, mock engine, shielded.
 | `transit-priority-v1` | 93.4 | +1.6% | 2161 | −1.2% | 12.2 |
 | `predictive-pressure-v2` | 94.3 | +0.7% | 2151 | −1.7% | 12.0 |
 | `fixed-time` | 95.0 | — | 2188 | — | 14.0 |
-| `rl-q-learning-v1` | 131.9 | −38.8% | 1963 | −10.3% | 27.0 |
+| `rl-network-v2` | 131.9 | −38.8% | 1963 | −10.3% | 27.0 |
 
 ### Rush (oversaturated)
 
@@ -110,7 +110,7 @@ more often. This is asserted in `tests/test_coordination.py`.
 ## Two metric traps this exposed
 
 **1. Average queue can be gamed by refusing demand.** Under rush,
-`rl-q-learning-v1` has the *lowest* mean queue of any controller (278.8, better
+`rl-network-v2` has the *lowest* mean queue of any controller (278.8, better
 than fixed-time) while having the *worst* throughput (−10.3%) and a catastrophic
 p95 (66.2 vs 27.2). It scores well because it lets fewer vehicles into the
 network — blocked demand does not appear in a queue-length metric. Under
@@ -137,12 +137,56 @@ and the fuel / CO₂ / rupee conversion in `docs/IMPACT.md`.
   performance claims must be regenerated in SUMO/TraCI.** In particular, the
   coordination result should be re-tested on a network whose geometry was not
   chosen by us.
-- `rl-q-learning-v1` is the weakest controller in both regimes. 30 training
-  episodes on a coarse 5×5×2 state space is not enough. Read it as "shielded RL
-  is wired up and safe", not as a result.
 - Demand is uncalibrated unless counts are supplied via `POST /api/calibrate`.
-- Under rush, `coordinated-pressure-v1` still carries a 3.5% higher mean queue
-  than fixed-time while moving more vehicles. Whether that trade is acceptable
-  is a policy question, not a technical one.
+- Confidence intervals use a normal approximation, coarse at small seed counts.
+
+## Two metric traps found while benchmarking
+
+Both were found by the benchmark itself, and both would have produced a
+confident, wrong headline number.
+
+**Average queue rewards refusing traffic.** With finite link storage, an
+approach held at red fills to capacity and then turns arrivals away at the
+boundary. Those vehicles never enter the network, so they never appear in the
+queue statistic. Plain fixed-time blocks roughly 100 more vehicles per run than
+`coordinated-pressure-v1` and posts a 3.5% *shorter* mean queue for it, while
+serving fewer vehicles overall. Ranking is therefore on demand actually served
+first, with queue only breaking ties among controllers that served the same
+share of demand. At normal demand nothing is blocked and this reduces to the
+old queue ranking.
+
+**Mean delay hides starvation.** The first RL controller posted the lowest mean
+queue of any controller under rush while running a p95 delay of 66 ticks
+against fixed-time's 27. It had learned to keep a couple of approaches
+permanently red. Every headline claim here is reported alongside p95 and
+worst-approach wait for that reason.
+
+## Negative results worth recording
+
+Four refinements to `coordinated-pressure-v1` were implemented, measured over
+8 seeds with paired confidence intervals, and **rejected**:
+
+| change | outcome |
+|---|---|
+| downstream relief (count space the receiving link frees this same step) | zero effect on every seed — with storage 40 and capacity 5, room is essentially never the binding constraint |
+| fairness term on accumulated red | lower throughput, more blocked arrivals |
+| explicit switching cost | no gain beyond the shield's existing minimum green |
+| exit-movement priority | +8.8 throughput ± 11.6, i.e. inside the noise |
+
+The controller is at the ceiling for this network geometry. Further gains need
+a richer engine — turning movements, lane-level storage, real travel times —
+rather than a better objective on this one. The v2 controller built for these
+experiments was deleted rather than shipped, since it changed nothing.
+
+## What did work: coordination generalises
+
+Rewriting the RL controller to choose one phase for the **whole network**
+instead of running an independent agent per junction moved it from 39% worse
+than fixed-time at normal demand to roughly 25% better — worst controller to
+second best, with no change to the learning algorithm itself. Its reward was
+also changed from negative queue length to vehicles discharged minus demand
+turned away, which closes the metric trap above. This is the same result the
+coordinated controller demonstrates, arrived at independently: on this network,
+phase alignment matters more than local optimisation.
 - Confidence intervals from `POST /api/whatif` use a normal approximation, which
   is coarse at small seed counts.
