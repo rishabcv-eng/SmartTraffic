@@ -5,9 +5,14 @@
 - Deterministic connected four-junction traffic lab with per-vehicle tracking,
   so delay percentiles and person-weighted delay are exact rather than inferred
   from queue length.
-- Eight controllers: `fixed-time`, `actuated`, `max-pressure`,
+- Ten controllers: `fixed-time`, `actuated`, `max-pressure`,
   `network-max-pressure`, `predictive-pressure-v2`, `mpc-lite-v1`,
-  `transit-priority-v1` (person-weighted), `rl-q-learning-v1` (shielded).
+  `transit-priority-v1` (person-weighted), `gated-pressure-v1` (capacity-aware),
+  `coordinated-pressure-v1` (network-level phase, the default), and
+  `rl-q-learning-v1` (shielded).
+- **Finite link storage with physical spillback.** An approach holds 40 vehicles;
+  a green cannot discharge into a full link, and demand that cannot enter is
+  counted rather than silently dropped.
 - **Safety shield** wrapping any controller: minimum green, maximum green
   starvation guard, guaranteed maximum pedestrian wait, emergency preemption,
   and fault fallback — with a per-decision audit trail explaining which
@@ -39,7 +44,7 @@
 - **Hardware-in-the-loop** signal-head feed with an ASCII wire format and ESP32
   firmware, including link-loss fail-safe.
 - REST + WebSocket API, React control room with an operations console.
-- 91 regression tests.
+- 104 regression tests.
 
 ## Requires an external dependency
 
@@ -51,9 +56,12 @@
 
 ## Incomplete / research phase
 
-- **Oversaturation.** Every adaptive controller currently loses to fixed-time
-  under heavy oversaturation. This is measured, reproducible and documented in
-  `docs/BENCHMARKS.md`. It needs gating and metering, not better queue-chasing.
+- **Oversaturation — largely resolved.** Adaptive control used to lose to
+  fixed-time under saturation. Two causes were found: unbounded link storage in
+  the engine, and independent per-junction optimisation destroying corridor
+  progression. `coordinated-pressure-v1` now leads on throughput and p95 in both
+  regimes, though it still carries a 3.5% higher mean queue than fixed-time under
+  rush. See `docs/BENCHMARKS.md`.
 - **RL quality.** `rl-q-learning-v1` is wired up and safely shielded, but 30
   training episodes on a coarse state space is not enough; it is currently the
   weakest controller. Treat it as an integration proof, not a result.

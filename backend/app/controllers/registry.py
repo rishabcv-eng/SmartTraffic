@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from app.controllers.actuated import ActuatedController
 from app.controllers.base import Controller
+from app.controllers.coordinated_pressure import CoordinatedPressureController
 from app.controllers.fixed_time import FixedTimeController
+from app.controllers.gated_pressure import GatedPressureController
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
 from app.controllers.network_max_pressure import NetworkMaxPressureController
@@ -21,13 +23,15 @@ CONTROLLERS: dict[str, type[Controller]] = {
     'predictive-pressure-v2': PredictivePressureController,
     'mpc-lite-v1': MPCLiteController,
     'transit-priority-v1': TransitPriorityController,
+    'gated-pressure-v1': GatedPressureController,
+    'coordinated-pressure-v1': CoordinatedPressureController,
     'rl-q-learning-v1': RLController,
 }
 
 #: Controllers that must never be run without the safety shield in front.
 SHIELD_REQUIRED = {'rl-q-learning-v1'}
 
-DEFAULT_CONTROLLER = 'predictive-pressure-v2'
+DEFAULT_CONTROLLER = 'coordinated-pressure-v1'
 
 
 def build(name: str, shielded: bool = False, **shield_kwargs) -> Controller:

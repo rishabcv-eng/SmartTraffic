@@ -7,7 +7,7 @@ from fastapi import FastAPI, File, HTTPException, Response, UploadFile, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.controllers.registry import CONTROLLERS, describe
+from app.controllers.registry import CONTROLLERS, DEFAULT_CONTROLLER, describe
 from app.services.benchmark import run_benchmark, run_benchmark_suite
 from app.services.calibration import CalibrationError, calibrate
 from app.services.comparison import run_comparison
@@ -45,7 +45,7 @@ app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=False,
 # --------------------------------------------------------------------- models
 
 class ResetRequest(BaseModel):
-    controller: str = 'predictive-pressure-v2'
+    controller: str = DEFAULT_CONTROLLER
     scenario: str = 'normal'
     seed: int = 7
     shielded: bool = True
@@ -106,7 +106,7 @@ class VisionApplyRequest(BaseModel):
 
 class ImpactRequest(BaseModel):
     baseline: str = 'fixed-time'
-    candidate: str = 'mpc-lite-v1'
+    candidate: str = 'coordinated-pressure-v1'
     steps: int = 180
     #: Pooled over several seeds. A single run is an anecdote, and the
     #: seed-to-seed spread here is larger than the effect being measured.
@@ -250,7 +250,7 @@ def forecast(horizon: int = 15):
 
 
 @app.get('/api/comparison')
-def comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20, scenario: str = 'normal', shielded: bool = True):
+def comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20, scenario: str = 'normal', shielded: bool = True):
     return run_comparison(left=left, right=right, steps=steps, seed=seed, event=event or None, event_tick=event_tick, scenario=scenario, shielded=shielded)
 
 

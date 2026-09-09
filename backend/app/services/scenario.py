@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
-from app.controllers.registry import build
+from app.controllers.registry import DEFAULT_CONTROLLER, build
 from app.controllers.safety import SafetyShield
 from app.services.impact import estimate_impact
 from app.simulation.mock_engine import MockTrafficEngine
@@ -20,7 +20,7 @@ from app.simulation.mock_engine import MockTrafficEngine
 class ScenarioConfig:
     """Everything that can be varied about a run."""
 
-    controller: str = 'predictive-pressure-v2'
+    controller: str = DEFAULT_CONTROLLER
     steps: int = 180
     seed: int = 7
     scenario: str = 'normal'

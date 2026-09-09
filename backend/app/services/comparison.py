@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.controllers.registry import CONTROLLERS, build
+from app.controllers.registry import CONTROLLERS, DEFAULT_CONTROLLER, build
 from app.simulation.mock_engine import MockTrafficEngine
 
 
-def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal', shielded: bool = True) -> dict:
+def run_comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal', shielded: bool = True) -> dict:
     """Return aligned frame sequences and end metrics from identical demand."""
     steps = max(1, min(steps, 300))
     event_tick = max(0, min(event_tick, steps - 1))

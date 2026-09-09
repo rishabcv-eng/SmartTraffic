@@ -49,8 +49,13 @@ questions a city asks after "does it work?".
 - **It explains itself.** `GET /api/safety/audit` is an engineering audit trail,
   not a log.
 - **It reports in city units.** See `docs/IMPACT.md` for every constant.
-- **It admits what it cannot do.** Adaptive control currently loses to a fixed
-  clock under heavy oversaturation — measured, reproducible, and written up in
+- **It coordinates rather than optimising each junction alone.** The benchmark
+  originally showed every adaptive controller losing to a fixed clock under
+  saturation. The cause turned out to be that a fixed clock switches every
+  junction in unison, accidentally creating a green wave that independent
+  optimisers destroy. `coordinated-pressure-v1` fixes it: **28% lower queues and
+  29% lower p95 delay than fixed-time** under normal demand, and the best
+  throughput and p95 under saturation. The full diagnosis is in
   `docs/BENCHMARKS.md`.
 - **It collects counts, not identities.** No ANPR, no faces, no image retention.
   See `docs/PRIVACY.md`.
@@ -194,7 +199,7 @@ This makes the A/B comparison reproducible and fair.
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 91 tests
+cd backend && python -m pytest -q     # 104 tests
 ```
 
 ## Research / expansion path

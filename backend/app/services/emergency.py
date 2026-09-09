@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.controllers.registry import DEFAULT_CONTROLLER
+
 
 PRIORITY_PROFILES = {
     'ambulance': {'priority': 100, 'lead_seconds': 12.0, 'hold_seconds': 20.0, 'max_delay_seconds': 0.0},
@@ -79,7 +81,7 @@ def plan_green_corridor(
 def run_preemption_comparison(
     route: list[str] | None = None,
     baseline: str = 'fixed-time',
-    candidate: str = 'predictive-pressure-v2',
+    candidate: str = DEFAULT_CONTROLLER,
     steps: int = 140,
     seed: int = 7,
     dispatch_tick: int = 20,

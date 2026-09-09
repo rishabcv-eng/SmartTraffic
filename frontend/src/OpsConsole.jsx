@@ -283,7 +283,7 @@ function ImpactTab() {
     api('/api/impact/compare', {
       method: 'POST',
       body: JSON.stringify({
-        baseline: 'fixed-time', candidate: 'mpc-lite-v1',
+        baseline: 'fixed-time', candidate: 'coordinated-pressure-v1',
         steps: 180, seeds: [3, 7, 11, 19, 29], scenario,
       }),
     }).then(setData).catch(e => setError(e.message)).finally(() => setBusy(false))
@@ -335,10 +335,10 @@ function ImpactTab() {
             <p className="ops-muted">{data.scope.note}</p>
             {saved.total_cost_inr < 0 && (
               <p className="ops-muted">
-                Negative here means the adaptive controller is <em>losing</em> to the fixed clock in
-                this regime. Under heavy oversaturation every approach is saturated at once, so
-                queue-chasing wins nothing and an even round-robin is hard to beat. See
-                docs/BENCHMARKS.md.
+                Negative here means the adaptive controller is <em>losing</em> to the fixed clock on
+                this measure. Under saturation the coordinated controller moves more vehicles and has
+                a better 95th-percentile delay, but carries a slightly higher mean queue — check the
+                benchmark tab rather than reading this number alone. See docs/BENCHMARKS.md.
               </p>
             )}
           </details>
@@ -403,8 +403,10 @@ function BenchTab() {
             </table>
           </div>
           <p className="ops-muted">
-            Ranked by vehicle queue. <code>transit-priority-v1</code> optimises person delay instead,
-            so read its person and bus columns rather than its rank. {data.note}
+            Ranked by vehicle queue. Two caveats: <code>transit-priority-v1</code> optimises person
+            delay, so read its person and bus columns rather than its rank; and under saturation mean
+            queue can be <em>improved</em> by a controller that simply lets fewer vehicles in, so
+            check throughput beside it. {data.note}
           </p>
         </>
       )}
@@ -560,7 +562,7 @@ function WhatIfTab() {
     api('/api/whatif', {
       method: 'POST',
       body: JSON.stringify({
-        controllers: ['fixed-time', 'predictive-pressure-v2', 'transit-priority-v1'],
+        controllers: ['fixed-time', 'coordinated-pressure-v1', 'mpc-lite-v1'],
         baseline: 'fixed-time', seeds: [3, 7, 11, 19, 29], steps: 120,
         demand_multiplier: Number(form.demand_multiplier),
         weather: form.weather,

@@ -63,11 +63,17 @@
 - [x] Privacy position documented against DPDP
 - [ ] Edge deployment: container, latency budget, offline operation
 
-## M8 — Oversaturation *(new, open research)*
-- [ ] Gating and metering at corridor entry
-- [ ] Refuse to serve movements whose downstream is blocked
+## M8 — Oversaturation *(largely resolved)*
+- [x] Finite link storage with physical spillback blocking
+- [x] Count demand that cannot physically enter, rather than dropping it
+- [x] Refuse to spend green on movements whose downstream is blocked
+      (`gated-pressure-v1`)
+- [x] Network-level phase coordination (`coordinated-pressure-v1`) — the actual
+      fix; local optimisation was destroying corridor progression
+- [ ] Close the remaining 3.5% mean-queue gap against fixed-time under rush
 - [ ] Re-run the rush benchmark once a calibrated peak replaces the synthetic one
+- [ ] Re-test coordination on a network geometry we did not choose
 
-Adaptive control currently **loses to fixed-time** under heavy oversaturation.
-This is measured and reproducible — see `docs/BENCHMARKS.md`. It is the most
-important open problem in the project.
+Adaptive control **used to lose** to fixed-time under saturation. It no longer
+does on throughput or p95. The write-up of how that was diagnosed is in
+`docs/BENCHMARKS.md` and is worth reading before extending the controllers.

@@ -126,15 +126,14 @@ def calibrate(csv_text: str, verify_steps: int = 240, seed: int = 7) -> dict:
         for jid, dirs in MockTrafficEngine.EXTERNAL_APPROACHES.items()
         for d in dirs
     }
-    observed_arrivals = {key: 0 for key in fit['scales']}
     baseline_lengths = {key: len(engine.lanes[key]) for key in engine.lanes}
 
-    # Count arrivals directly by watching queue growth on a held-red network.
+    # Replay and read the offered-demand counter directly. Measuring queue
+    # growth instead would undercount once an approach reaches its storage
+    # limit, which is exactly the regime a peak-hour count is taken in.
     for _ in range(verify_steps):
-        before = {key: len(lane) for key, lane in engine.lanes.items()}
         engine.step({jid: 'PED' for jid in MockTrafficEngine.JUNCTION_IDS})
-        for key in observed_arrivals:
-            observed_arrivals[key] += len(engine.lanes[key]) - before[key]
+    observed_arrivals = dict(engine.arrivals_seen)
 
     hours = verify_steps * TICK_SECONDS / 3600.0
     report = []

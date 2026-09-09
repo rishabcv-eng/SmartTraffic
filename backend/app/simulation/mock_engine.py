@@ -26,6 +26,17 @@ WEATHER_CAPACITY = {
 #: Ticks a vehicle needs to travel from one junction to the next.
 LINK_TRAVEL_TICKS = 4
 
+#: How many vehicles one approach link can physically hold.
+#:
+#: This matters more than it looks. Without a storage limit, queues grow without
+#: bound and a green can always discharge into a downstream link that is already
+#: full -- which is not traffic, it is bookkeeping. Finite storage is also what
+#: max-pressure control assumes: the pressure signal is only meaningful when a
+#: blocked downstream link can actually refuse to accept more vehicles.
+#:
+#: 40 vehicles is roughly a 200 m two-lane approach at jam density.
+LINK_STORAGE = 40
+
 
 @dataclass
 class Vehicle:
@@ -175,6 +186,12 @@ class MockTrafficEngine(TrafficEngine):
         self.served_vehicles = 0
         self.served_people = 0.0
         self.bus_waits: list[int] = []
+        self.blocked_arrivals = 0
+        self.spillback_blocked = 0
+        #: Offered demand per approach, counted whether or not it could
+        #: physically enter. This is the quantity a traffic count measures.
+        self.arrivals_seen: dict[tuple[str, str], int] = {key: 0 for key in self.lanes}
+        self._committed: dict[tuple[str, str], int] = {}
         return self.snapshot()
 
     def _spawn_kind(self) -> str:
@@ -307,13 +324,20 @@ class MockTrafficEngine(TrafficEngine):
 
     def step(self, phases: dict[str, Phase]) -> NetworkSnapshot:
         self.tick += 1
+        self._committed = {}
 
         for jid, approaches in self.EXTERNAL_APPROACHES.items():
             for direction in approaches:
+                lane = self.lanes[(jid, direction)]
                 for _ in range(self._arrivals(jid, direction)):
-                    self.lanes[(jid, direction)].append(
-                        Vehicle(arrival_tick=self.tick, kind=self._spawn_kind())
-                    )
+                    self.arrivals_seen[(jid, direction)] += 1
+                    if len(lane) >= LINK_STORAGE:
+                        # The approach is physically full. The demand does not
+                        # vanish -- it queues back off-network, so it is counted
+                        # rather than silently dropped.
+                        self.blocked_arrivals += 1
+                        continue
+                    lane.append(Vehicle(arrival_tick=self.tick, kind=self._spawn_kind()))
 
         for jid in self.JUNCTION_IDS:
             for _ in range(int(round(self.rng.randint(0, 2) * self.pedestrian_rate))):
@@ -372,17 +396,37 @@ class MockTrafficEngine(TrafficEngine):
 
         return self.snapshot()
 
+    def _downstream_space(self, jid: str, direction: str) -> int:
+        """Room left on the link this movement discharges into.
+
+        Movements that leave the network are never blocked. Everything else is
+        limited by physical storage on the receiving approach, counting what
+        other movements have already committed to it this tick.
+        """
+        target = self.STRAIGHT_TRANSFERS.get((jid, direction))
+        if target is None:
+            return LINK_STORAGE
+        return LINK_STORAGE - len(self.lanes[target]) - self._committed.get(target, 0)
+
     def _discharge(self, jid: str, direction: str) -> list[Vehicle]:
         """Release vehicles from one approach within this tick's green capacity."""
         lane = self.lanes[(jid, direction)]
         budget = self._capacity(jid, direction)
+        target = self.STRAIGHT_TRANSFERS.get((jid, direction))
         released: list[Vehicle] = []
         while lane and budget > 0:
+            if self._downstream_space(jid, direction) <= 0:
+                # Spillback: the receiving link is full, so this movement is
+                # physically blocked no matter what the signal says.
+                self.spillback_blocked += 1
+                break
             head = lane[0]
             cost = BUS_SERVICE_COST if head.kind == 'bus' else 1
             if cost > budget:
                 break
             lane.popleft()
+            if target is not None:
+                self._committed[target] = self._committed.get(target, 0) + 1
             budget -= cost
             wait = self.tick - head.arrival_tick
             self.vehicle_waits.append(wait)
@@ -512,4 +556,9 @@ class MockTrafficEngine(TrafficEngine):
             'emergency_delay_ticks': self.emergency_run.delay_ticks if self.emergency_run else 0,
             'weather': self.weather,
             'active_faults': len(self.faults),
+            # Demand that could not physically enter, and greens wasted on a
+            # movement whose downstream link was already full.
+            'blocked_arrivals': self.blocked_arrivals,
+            'spillback_blocked_movements': self.spillback_blocked,
+            'link_storage': LINK_STORAGE,
         }

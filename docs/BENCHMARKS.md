@@ -4,14 +4,14 @@ SmartTraffic does not claim improvement until repeatable experiments demonstrate
 it. Every experiment records the seed, scenario, controller configuration and
 simulator version.
 
-Regenerate everything below with:
+Regenerate with:
 
 ```bash
-cd backend && python -m pytest -q          # 91 regression tests
+cd backend && python -m pytest -q          # 104 regression tests
 curl 'localhost:8000/api/benchmark/suite?steps=180'
 ```
 
-## Baselines and controllers
+## Controllers
 
 | Controller | Idea |
 | --- | --- |
@@ -22,98 +22,127 @@ curl 'localhost:8000/api/benchmark/suite?steps=180'
 | `predictive-pressure-v2` | Max-pressure on short-horizon forecast queues. |
 | `mpc-lite-v1` | Short-horizon scoring with spillback and switching penalties. |
 | `transit-priority-v1` | Pressure measured in **people**, not vehicles. |
+| `gated-pressure-v1` | Scores the discharge a movement can *actually* achieve, capped by downstream space. |
+| `coordinated-pressure-v1` | Picks one phase for the **network**, letting a junction deviate only on an overwhelming local case. |
 | `rl-q-learning-v1` | Tabular Q-learning policy, always behind the safety shield. |
 
-All benchmark runs are **shielded by default** (`SafetyShield`), because that is
-the configuration a city would deploy: minimum green, maximum green, a
-guaranteed pedestrian wait, and fault fallback. Pass `shielded=false` for an
-ablation of the raw optimiser.
+All runs are **shielded by default** (`SafetyShield`): minimum green, maximum
+green, a guaranteed pedestrian wait, and fault fallback. Pass `shielded=false`
+for an ablation of the raw optimiser.
 
-## Scenarios
+## Headline result
 
-- Balanced normal demand
-- Directional rush-hour surge
-- Road-capacity reduction / incident
-- Oversaturated corridor and spillback
-- Emergency vehicle passage
-- Sensor dropout, stuck detector, comms loss, signal-head failure
-- Weather-reduced saturation flow (rain, heavy rain, fog)
+Pooled over seeds `[3, 7, 11, 19, 29]`, 180 ticks, mock engine, shielded.
 
-## Metrics
+### Normal demand
 
-Averages alone are not enough — they hide a starved approach — so the suite
-reports the distribution and the equity metrics beside them:
+| Controller | Mean queue | vs fixed | Throughput | vs fixed | p95 delay |
+| --- | --- | --- | --- | --- | --- |
+| `coordinated-pressure-v1` | 68.4 | **+28.0%** | 2198 | **+0.4%** | **10.0** |
+| `mpc-lite-v1` | 86.9 | +8.5% | 2165 | −1.0% | 11.6 |
+| `actuated` | 88.4 | +7.0% | 2164 | −1.1% | 11.4 |
+| `max-pressure` | 90.4 | +4.8% | 2159 | −1.3% | 11.6 |
+| `gated-pressure-v1` | 91.0 | +4.2% | 2160 | −1.3% | 12.0 |
+| `network-max-pressure` | 91.1 | +4.0% | 2153 | −1.6% | 12.0 |
+| `transit-priority-v1` | 93.4 | +1.6% | 2161 | −1.2% | 12.2 |
+| `predictive-pressure-v2` | 94.3 | +0.7% | 2151 | −1.7% | 12.0 |
+| `fixed-time` | 95.0 | — | 2188 | — | 14.0 |
+| `rl-q-learning-v1` | 131.9 | −38.8% | 1963 | −10.3% | 27.0 |
 
-- Mean, p50, p95 and maximum vehicle delay
-- Worst per-approach wait and which approach it was
-- Mean **person** delay (occupancy-weighted) and mean bus delay
-- Mean and p95 pedestrian wait
-- Network throughput, peak queue, phase switches
-- Emergency journey time and red-light waits
-- Idle fuel, CO₂ and rupee cost (see `docs/IMPACT.md`)
+### Rush (oversaturated)
 
-## Result: adaptive control wins under normal demand
+| Controller | Mean queue | vs fixed | Throughput | vs fixed | p95 delay |
+| --- | --- | --- | --- | --- | --- |
+| `fixed-time` | 292.9 | — | 2676 | — | 27.2 |
+| `coordinated-pressure-v1` | 303.1 | −3.5% | **2703** | **+1.0%** | **25.8** |
+| `predictive-pressure-v2` | 352.9 | −20.5% | 2630 | −1.7% | 29.0 |
+| `max-pressure` | 354.1 | −20.9% | 2618 | −2.1% | 29.6 |
+| `gated-pressure-v1` | 354.5 | −21.0% | 2629 | −1.7% | 29.2 |
+| `mpc-lite-v1` | 356.9 | −21.8% | 2615 | −2.3% | 29.8 |
+| `transit-priority-v1` | 369.1 | −26.0% | 2580 | −3.6% | 32.2 |
 
-Pooled over seeds `[3, 7, 11, 19, 29]`, 180 ticks, mock engine, shielded,
-measured as mean network queue against the fixed-time baseline:
+## How the oversaturation defect was found and fixed
 
-| Controller | Mean queue | vs fixed-time |
-| --- | --- | --- |
-| `mpc-lite-v1` | 86.9 | **+8.0%** |
-| `actuated` | 88.4 | +6.5% |
-| `max-pressure` | 90.4 | +4.3% |
-| `network-max-pressure` | 91.1 | +3.6% |
-| `transit-priority-v1` | 93.4 | +1.2% |
-| `predictive-pressure-v2` | 94.3 | +0.2% |
-| `fixed-time` | 94.5 | — |
-| `rl-q-learning-v1` | 104.0 | −10.0% |
+An earlier revision of this document reported that **every** adaptive controller
+lost to a fixed clock under saturation, by 5–8%. That was real, reproducible
+across all five seeds — and it had two separate causes, one a modelling bug and
+one a genuine control-design error.
 
-## Result: every adaptive controller *loses* under oversaturation
+### Cause 1: the engine had unbounded link storage
 
-Same seeds and settings, `rush` demand:
+Approaches were holding 191 vehicles. A real 200 m two-lane approach holds about
+40. With unbounded storage, a green could always discharge into a downstream
+link that was already full, which is bookkeeping rather than traffic. It also
+broke max-pressure's central assumption: the pressure signal only means anything
+when a blocked link can actually refuse vehicles.
 
-| Controller | Mean queue | vs fixed-time |
-| --- | --- | --- |
-| `fixed-time` | 775.6 | — |
-| `predictive-pressure-v2` | 812.4 | −4.8% |
-| `network-max-pressure` | 815.5 | −5.2% |
-| `actuated` | 819.6 | −5.7% |
-| `max-pressure` | 820.6 | −5.8% |
-| `mpc-lite-v1` | 834.6 | −7.6% |
-| `transit-priority-v1` | 837.1 | −7.9% |
-| `rl-q-learning-v1` | 843.1 | −8.7% |
+Adding `LINK_STORAGE = 40` with physical spillback blocking shrank the gap from
+−5..−8% to about −2%, and bounded the queues (776 → 293).
 
-This is not a bug, and it is not noise — the sign is consistent across all five
-seeds. It is a known failure mode of queue-chasing control. Once **every**
-approach is saturated, total service capacity is the binding constraint, not the
-allocation of green between approaches. A pressure controller then spends green
-on the longest queue even when that movement's downstream link is full, so the
-discharge goes nowhere, while an even round-robin at least keeps every movement
-draining at capacity.
+### Cause 2: local optimisation destroys progression
 
-Three honest consequences:
+The remaining gap was the real finding. A fixed clock switches every junction
+*in unison*, which accidentally implements a green wave along this network's
+platoon chains — a vehicle discharged by J1 arrives at J3 to find the same phase
+still running. Controllers that optimise each junction independently maximise
+local pressure and destroy that alignment, so platoons stop at every junction
+and lose more to stopping than local optimisation ever wins back.
 
-1. **Do not quote a single headline improvement figure.** The number depends on
-   the demand regime. Quote the regime with it.
-2. **Oversaturation needs a different mechanism** — gating and metering at the
-   corridor entry, or explicitly refusing to serve a movement whose downstream
-   is blocked. Queue-chasing cannot fix a capacity deficit.
-3. **The current `rush` scenario is too extreme to be a useful headline.** At a
-   1.8–2.2× arrival multiplier the network never recovers within the run, so it
-   measures gridlock rather than control quality. A calibrated peak from real
-   counts would be a better demonstration case.
+The test that confirmed it: a deliberately crude controller that computes
+pressure network-wide and applies one phase everywhere beat both fixed-time and
+max-pressure immediately. `coordinated-pressure-v1` is that idea done properly —
+coordination by default, with capacity-aware scoring and a high bar for a single
+junction to break ranks.
 
-`rl-q-learning-v1` being worst in both regimes is also worth stating plainly:
-30 training episodes on a coarse 5×5×2 state space is not enough, and the
-result should be read as "shielded RL is wired up and safe", not "RL works
-here yet".
+**The lesson generalises beyond this project: on a corridor, coordination is
+worth more than local optimality.** That is also why `docs/ALGORITHMS.md` and
+the green-wave module exist; this result is the empirical case for them.
+
+### Why deviation almost never fires
+
+In this topology every phase at every junction contains at least one movement
+that exits the network, so no phase can ever be *fully* blocked and holding the
+coordinated phase is almost never wasteful. Across 180 ticks × 4 junctions the
+deviation threshold fires 0 times in clean running and twice under an accident.
+On a network where a phase can be completely blocked it would earn its keep far
+more often. This is asserted in `tests/test_coordination.py`.
+
+## Two metric traps this exposed
+
+**1. Average queue can be gamed by refusing demand.** Under rush,
+`rl-q-learning-v1` has the *lowest* mean queue of any controller (278.8, better
+than fixed-time) while having the *worst* throughput (−10.3%) and a catastrophic
+p95 (66.2 vs 27.2). It scores well because it lets fewer vehicles into the
+network — blocked demand does not appear in a queue-length metric. Under
+saturation, **throughput and `blocked_arrivals` are the honest metrics**, not
+mean queue.
+
+**2. Averages hide starvation.** This is why every table here carries p95
+alongside the mean, and why the suite reports the worst per-approach wait.
+
+## Scenarios and metrics
+
+Scenarios: balanced normal demand, directional rush surge, capacity-reducing
+accident, oversaturated corridor with spillback, emergency passage, sensor and
+signal faults, weather-reduced saturation flow.
+
+Metrics: mean / p50 / p95 / max vehicle delay; worst per-approach wait; person
+and bus delay; pedestrian mean and p95 wait; throughput; peak queue; phase
+switches; blocked arrivals; spillback-blocked movements; emergency journey time;
+and the fuel / CO₂ / rupee conversion in `docs/IMPACT.md`.
 
 ## Known limitations
 
 - The mock engine is a development harness, not a traffic simulator. **Final
-  performance claims must be regenerated in SUMO/TraCI.**
+  performance claims must be regenerated in SUMO/TraCI.** In particular, the
+  coordination result should be re-tested on a network whose geometry was not
+  chosen by us.
+- `rl-q-learning-v1` is the weakest controller in both regimes. 30 training
+  episodes on a coarse 5×5×2 state space is not enough. Read it as "shielded RL
+  is wired up and safe", not as a result.
 - Demand is uncalibrated unless counts are supplied via `POST /api/calibrate`.
-- Impact figures inherit every assumption in `docs/IMPACT.md`, particularly the
-  annualisation factor.
+- Under rush, `coordinated-pressure-v1` still carries a 3.5% higher mean queue
+  than fixed-time while moving more vehicles. Whether that trade is acceptable
+  is a policy question, not a technical one.
 - Confidence intervals from `POST /api/whatif` use a normal approximation, which
-  is coarse at the small seed counts used in the UI.
+  is coarse at small seed counts.

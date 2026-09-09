@@ -14,6 +14,7 @@ from __future__ import annotations
 from math import sqrt
 from statistics import mean, stdev
 
+from app.controllers.registry import DEFAULT_CONTROLLER
 from app.services.scenario import ScenarioConfig, simulate
 
 #: Normal approximation for a 95% interval. Fine for the seed counts used here.
@@ -56,7 +57,7 @@ def run_whatif(
     ``{'kind': 'signal-fault', 'junction': 'J3'}`` or a detector failure.
     """
     seeds = seeds or DEFAULT_SEEDS
-    controllers = controllers or [baseline, 'predictive-pressure-v2', 'transit-priority-v1']
+    controllers = controllers or [baseline, DEFAULT_CONTROLLER, 'mpc-lite-v1']
     if baseline not in controllers:
         controllers = [baseline] + controllers
 
