@@ -7,6 +7,12 @@ from app.controllers.base import Controller
 from app.controllers.coordinated_pressure import CoordinatedPressureController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.gated_pressure import GatedPressureController
+from app.controllers.heterogeneous_pressure import (
+    HeterogeneousPressureController,
+    HeterogeneousTimedController,
+    PCUPressureController,
+    PCUTimedController,
+)
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
 from app.controllers.network_max_pressure import NetworkMaxPressureController
@@ -25,6 +31,10 @@ CONTROLLERS: dict[str, type[Controller]] = {
     'transit-priority-v1': TransitPriorityController,
     'gated-pressure-v1': GatedPressureController,
     'coordinated-pressure-v1': CoordinatedPressureController,
+    'pcu-pressure-v1': PCUPressureController,
+    'heterogeneous-pressure-v1': HeterogeneousPressureController,
+    'pcu-timed-v1': PCUTimedController,
+    'heterogeneous-timed-v1': HeterogeneousTimedController,
     'rl-network-v2': RLController,
 }
 

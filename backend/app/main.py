@@ -15,6 +15,7 @@ from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor, run_p
 from app.services.greenwave import plan_green_wave
 from app.services.impact import ImpactAssumptions, compare_impact
 from app.services.runner import RunConfig, SimulationRunner
+from app.services.saturation import comparison_report
 from app.services.scenario import ScenarioConfig, simulate
 from app.services.single_junction import run_single_junction_comparison
 from app.services.vision import apply_corrections, detect_vehicles, detector_status, seed_engine
@@ -255,6 +256,16 @@ def comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps:
 
 
 # ----------------------------------------------------------------- green wave
+
+@app.get('/api/saturation/report')
+def saturation_report(lanes: float = 2.0):
+    """How far static PCU drifts from real lane-less discharge.
+
+    The measurement study behind heterogeneous-pressure-v1. See
+    docs/HETEROGENEOUS_FLOW.md for what it does and does not establish.
+    """
+    return comparison_report(lanes=max(1.0, min(lanes, 6.0)))
+
 
 @app.get('/api/greenwave')
 def greenwave(corridor: str = 'J1,J2,J4', cycle: float = 16.0, green: float = 8.0, speed_kmph: float = 40.0):

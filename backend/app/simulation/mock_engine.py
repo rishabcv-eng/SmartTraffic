@@ -6,12 +6,27 @@ from dataclasses import dataclass
 from statistics import mean
 
 from app.models import DIRECTIONS, OCCUPANCY, JunctionState, NetworkSnapshot, Phase
+from app.services.saturation import (
+    DEFAULT_LANES,
+    DEFAULT_MIX,
+    VEHICLE_CLASSES,
+    discharge_seconds,
+    sample_composition,
+)
 from app.simulation.base import TrafficEngine
 
-#: Discharge capacity of one approach during one tick of green, in vehicle units.
+#: Seconds of real time represented by one tick. Discharge is budgeted in
+#: seconds of green, and each class consumes what it physically needs at the
+#: stop line -- see ``services.saturation``.
+TICK_SECONDS = 5.0
+
+#: Retained for callers that still think in whole cars per tick. A car consumes
+#: 1.0 s of green on a two-lane approach, so a 5 s tick clears 5 cars, which is
+#: what the old flat capacity assumed. The heterogeneous model reproduces the
+#: old behaviour exactly for car-only traffic and diverges only as the mix does.
 BASE_CAPACITY = 5
 
-#: A bus occupies more green time than a car (longer headway plus stop dwell).
+#: Kept so older call sites importing this symbol keep working.
 BUS_SERVICE_COST = 2
 
 #: Saturation-flow multipliers. Wet and low-visibility conditions measurably
@@ -47,7 +62,16 @@ class Vehicle:
 
     @property
     def occupancy(self) -> float:
+        cls = VEHICLE_CLASSES.get(self.kind)
+        if cls is not None:
+            return cls.occupancy
         return OCCUPANCY.get(self.kind, OCCUPANCY['car'])
+
+    @property
+    def storage(self) -> float:
+        """Queue room consumed, in car-lengths. Two-wheelers pack far tighter."""
+        cls = VEHICLE_CLASSES.get(self.kind)
+        return cls.storage if cls else 1.0
 
 
 @dataclass
@@ -158,6 +182,21 @@ class MockTrafficEngine(TrafficEngine):
         self.bus_share = 0.08
         self.pedestrian_rate = 1.0
 
+        #: Lateral width of an approach, in lane-equivalents, and the stream
+        #: composition arriving on it. Together these set how fast a mixed
+        #: queue actually clears -- see services.saturation.
+        # Fleet composition is configuration, not per-run state: it must
+        # survive a reset, or the standing queues get rebuilt from the default
+        # mix and never match the arrivals that follow.
+        self.approach_lanes = getattr(self, 'approach_lanes', DEFAULT_LANES)
+        self.mix = getattr(self, 'mix', None) or dict(DEFAULT_MIX)
+        #: Per-approach overrides. A systematic bias in how a controller values
+        #: vehicle classes cancels out when every approach carries the same mix;
+        #: it only changes a decision when competing approaches differ. Real
+        #: corridors do differ -- a two-wheeler feeder meeting a bus route -- so
+        #: the mix has to be settable per approach to test that at all.
+        self.approach_mix: dict[tuple[str, str], dict] = getattr(self, 'approach_mix', None) or {}
+
         #: Per-approach demand scaling, overwritten by calibration against
         #: observed turning counts.
         self.demand_scale: dict[tuple[str, str], float] = {}
@@ -167,7 +206,8 @@ class MockTrafficEngine(TrafficEngine):
             for direction in DIRECTIONS:
                 initial = self.INITIAL_QUEUES[jid][direction]
                 self.lanes[(jid, direction)] = deque(
-                    Vehicle(arrival_tick=0, kind=self._spawn_kind()) for _ in range(initial)
+                    Vehicle(arrival_tick=0, kind=self._spawn_kind((jid, direction)))
+                    for _ in range(initial)
                 )
 
         self.pedestrians: dict[str, deque] = {jid: deque() for jid in self.JUNCTION_IDS}
@@ -194,8 +234,10 @@ class MockTrafficEngine(TrafficEngine):
         self._committed: dict[tuple[str, str], int] = {}
         return self.snapshot()
 
-    def _spawn_kind(self) -> str:
-        return 'bus' if self.rng.random() < getattr(self, 'bus_share', 0.08) else 'car'
+    def _spawn_kind(self, key: tuple[str, str] | None = None) -> str:
+        """Draw a vehicle class from the composition arriving on this approach."""
+        mix = getattr(self, 'approach_mix', {}).get(key) if key else None
+        return sample_composition(self.rng, mix or getattr(self, 'mix', DEFAULT_MIX))
 
     # ------------------------------------------------------------- disturbance
 
@@ -287,10 +329,12 @@ class MockTrafficEngine(TrafficEngine):
         scale = self.demand_scale.get((jid, direction), 1.0)
         return max(0, int(round(self.rng.randint(0, 3) * self.arrival_multiplier * scale)))
 
-    def _capacity(self, junction_id: str, direction: str) -> int:
+    def _capacity(self, junction_id: str, direction: str) -> float:
         if self.incident == 'accident:J2-west' and junction_id == 'J2' and direction == 'west':
-            return 1
-        return max(1, int(round(BASE_CAPACITY * WEATHER_CAPACITY.get(self.weather, 1.0))))
+            # One second of green per tick: a lane blocked by a stalled vehicle
+            # still lets a trickle past, which is what makes the jam spread.
+            return 1.0
+        return TICK_SECONDS * WEATHER_CAPACITY.get(self.weather, 1.0)
 
     # Retained so older call sites keep working.
     def _service(self, junction_id: str, direction: str) -> int:
@@ -331,13 +375,18 @@ class MockTrafficEngine(TrafficEngine):
                 lane = self.lanes[(jid, direction)]
                 for _ in range(self._arrivals(jid, direction)):
                     self.arrivals_seen[(jid, direction)] += 1
-                    if len(lane) >= LINK_STORAGE:
-                        # The approach is physically full. The demand does not
-                        # vanish -- it queues back off-network, so it is counted
-                        # rather than silently dropped.
+                    arrival = Vehicle(arrival_tick=self.tick,
+                                      kind=self._spawn_kind((jid, direction)))
+                    # Admit only if *this* vehicle fits. Checking the approach
+                    # is merely "not yet full" lets a bus squeeze past the cap,
+                    # and a two-wheeler that would have fitted gets refused
+                    # while a car that would not does get in.
+                    if self._occupied((jid, direction)) + arrival.storage > LINK_STORAGE:
+                        # The demand does not vanish -- it queues back
+                        # off-network, so it is counted rather than dropped.
                         self.blocked_arrivals += 1
                         continue
-                    lane.append(Vehicle(arrival_tick=self.tick, kind=self._spawn_kind()))
+                    lane.append(arrival)
 
         for jid in self.JUNCTION_IDS:
             for _ in range(int(round(self.rng.randint(0, 2) * self.pedestrian_rate))):
@@ -396,17 +445,26 @@ class MockTrafficEngine(TrafficEngine):
 
         return self.snapshot()
 
-    def _downstream_space(self, jid: str, direction: str) -> int:
-        """Room left on the link this movement discharges into.
+    def _occupied(self, key: tuple[str, str]) -> float:
+        """Storage consumed by a queue, in car-lengths rather than vehicles."""
+        return sum(v.storage for v in self.lanes[key])
+
+    def _downstream_space(self, jid: str, direction: str) -> float:
+        """Room left on the link this movement discharges into, in car-lengths.
 
         Movements that leave the network are never blocked. Everything else is
         limited by physical storage on the receiving approach, counting what
         other movements have already committed to it this tick.
+
+        Storage is measured in car-lengths, not vehicles, for the same reason
+        discharge is measured in seconds: a link holds roughly three times as
+        many two-wheelers as cars, and counting them as equal understates how
+        much traffic an Indian approach can actually hold.
         """
         target = self.STRAIGHT_TRANSFERS.get((jid, direction))
         if target is None:
-            return LINK_STORAGE
-        return LINK_STORAGE - len(self.lanes[target]) - self._committed.get(target, 0)
+            return float(LINK_STORAGE)
+        return LINK_STORAGE - self._occupied(target) - self._committed.get(target, 0.0)
 
     def _discharge(self, jid: str, direction: str) -> list[Vehicle]:
         """Release vehicles from one approach within this tick's green capacity."""
@@ -415,18 +473,22 @@ class MockTrafficEngine(TrafficEngine):
         target = self.STRAIGHT_TRANSFERS.get((jid, direction))
         released: list[Vehicle] = []
         while lane and budget > 0:
-            if self._downstream_space(jid, direction) <= 0:
-                # Spillback: the receiving link is full, so this movement is
-                # physically blocked no matter what the signal says.
+            head = lane[0]
+            if self._downstream_space(jid, direction) < head.storage:
+                # Spillback: the receiving link cannot fit this vehicle, so the
+                # movement is physically blocked whatever the signal says.
                 self.spillback_blocked += 1
                 break
-            head = lane[0]
-            cost = BUS_SERVICE_COST if head.kind == 'bus' else 1
+            # Green time this vehicle physically needs at the stop line. A
+            # two-wheeler filters into a lateral gap and costs roughly a third
+            # of a car; counting both as "one vehicle" is the error this whole
+            # model exists to remove.
+            cost = discharge_seconds(head.kind, self.approach_lanes)
             if cost > budget:
                 break
             lane.popleft()
             if target is not None:
-                self._committed[target] = self._committed.get(target, 0) + 1
+                self._committed[target] = self._committed.get(target, 0.0) + head.storage
             budget -= cost
             wait = self.tick - head.arrival_tick
             self.vehicle_waits.append(wait)
@@ -482,6 +544,12 @@ class MockTrafficEngine(TrafficEngine):
                 d: sum(1 for v in self.lanes[(jid, d)] if v.kind == 'bus')
                 for d in DIRECTIONS
             }
+            composition = {}
+            for d in DIRECTIONS:
+                counts: dict[str, int] = {}
+                for v in self.lanes[(jid, d)]:
+                    counts[v.kind] = counts.get(v.kind, 0) + 1
+                composition[d] = counts
             mode = self._junction_mode(jid)
             junctions.append(JunctionState(
                 id=jid,
@@ -495,6 +563,7 @@ class MockTrafficEngine(TrafficEngine):
                 buses=buses,
                 mode=mode,
                 healthy=mode == 'adaptive',
+                composition=composition,
             ))
 
         return NetworkSnapshot(

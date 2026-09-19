@@ -138,6 +138,6 @@ def test_vision_apply_requires_a_prior_analysis(client):
 def test_benchmark_suite_includes_every_controller(client):
     body = client.get('/api/benchmark/suite?steps=30').json()
 
-    assert len(body['summary']) == 10
+    assert len(body['summary']) == 14
     assert body['best_controller']
     assert 'impact_vs_fixed_time' in body
