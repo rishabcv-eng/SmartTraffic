@@ -238,3 +238,81 @@ class PCUTimedController(TimedPressureController, PCUPressureController):
     """Green duration set by a static-PCU estimate. The conventional baseline."""
 
     name = 'pcu-timed-v1'
+
+
+class PersonSecondsController(TimedPressureController):
+    """Maximise people moved per second of green, with an explicit fairness term.
+
+    ``heterogeneous-timed-v1`` corrected the measurement and moved many more
+    people, but the way it did so was uncomfortable. It optimises *road
+    efficiency* -- green time per vehicle cleared -- and because two-wheelers
+    are cheap to clear, an approach full of them scores low on the thing the
+    controller actually maximises. Green drifted to the arterial, and the 95th
+    percentile delay on the two-wheeler feeder rose by 48 ticks at demand x4.
+    In an Indian city those riders are generally the least able to absorb it.
+
+    The mistake was optimising a proxy. Road efficiency is not the objective; it
+    is a constraint. What a signal should maximise is *people moved*, and the
+    quantity that follows from that is people per second of green:
+
+        rate_i = (people waiting on approach i) / (green seconds approach i needs)
+
+    A two-wheeler queue scores well here despite carrying few people each,
+    precisely because it clears so fast. A bus queue scores well because each
+    vehicle carries thirty-five. The previous controller could only see the
+    denominator.
+
+    On top of that sits a fairness term proportional to accumulated red time, so
+    an approach that has been waiting gains priority when the choice is close.
+    That is what keeps the person-throughput gain from being paid for by one
+    group of road users.
+    """
+
+    name = 'person-seconds-v1'
+
+    def __init__(self, fairness_weight: float = 1.6, lanes: float = DEFAULT_LANES, **kwargs):
+        super().__init__(**kwargs)
+        self.lanes = lanes
+        #: People-equivalents each tick of accumulated red is worth. Raising it
+        #: buys a shorter tail of long waits with a little person-throughput.
+        self.fairness_weight = fairness_weight
+        self.red_ticks: dict[tuple[str, str], int] = {}
+
+    # Duration and downstream room stay in seconds, which is the unit they are
+    # physically measured in; only the *objective* changes.
+    def _demand(self, junction, direction: str) -> float:
+        counts = junction.composition.get(direction)
+        if not counts:
+            return float(getattr(junction, direction)) * discharge_seconds('car', self.lanes)
+        return sum(n * discharge_seconds(k, self.lanes) for k, n in counts.items())
+
+    def _people(self, junction, direction: str) -> float:
+        counts = junction.composition.get(direction)
+        if not counts:
+            return float(getattr(junction, direction)) * VEHICLE_CLASSES['car'].occupancy
+        return sum(n * VEHICLE_CLASSES[k].occupancy for k, n in counts.items())
+
+    def _junction_score(self, junction, by_id, phase: Phase) -> float:
+        score = 0.0
+        for direction in PHASE_DIRECTIONS[phase]:
+            seconds = self._demand(junction, direction)
+            if seconds <= 0:
+                continue
+            people = self._people(junction, direction)
+            room = self._room(junction, by_id, direction)
+            # Green actually usable this tick, capped by capacity and by room
+            # on the receiving link.
+            usable = max(0.0, min(seconds, self.capacity, room))
+            # People that green would actually move.
+            score += people * (usable / seconds)
+            score += self.fairness_weight * self.red_ticks.get((junction.id, direction), 0)
+        return score
+
+    def choose_phases(self, snapshot: NetworkSnapshot) -> dict[str, Phase]:
+        actions = super().choose_phases(snapshot)
+        for jid, phase in actions.items():
+            served = PHASE_DIRECTIONS.get(phase, ())
+            for direction in ('north', 'south', 'east', 'west'):
+                key = (jid, direction)
+                self.red_ticks[key] = 0 if direction in served else self.red_ticks.get(key, 0) + 1
+        return actions

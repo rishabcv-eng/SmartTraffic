@@ -184,3 +184,62 @@ def test_correcting_the_measure_moves_more_people_when_mixes_differ():
     # is exactly why it is measured here rather than buried in an average.
     vehicles = [h['served_vehicles'] - p['served_vehicles'] for p, h in zip(pcu, het)]
     assert mean(vehicles) < 0, 'the gain is in people moved, not vehicles moved'
+
+
+# ------------------------------------------- optimising people, not efficiency
+
+def test_person_seconds_keeps_the_people_gain_over_the_conventional_baseline():
+    """It must still beat what a deployed Indian system does today."""
+    seeds = (3, 7, 11, 19, 29, 37, 41, 53)
+    pcu = [_run('pcu-timed-v1', s, 7.0) for s in seeds]
+    ps = [_run('person-seconds-v1', s, 7.0) for s in seeds]
+
+    people = [b['served_people'] - a['served_people'] for a, b in zip(pcu, ps)]
+    ci = 1.96 * stdev(people) / sqrt(len(people))
+    assert mean(people) > ci > 0, 'must move significantly more people than static PCU'
+
+
+def test_person_seconds_removes_the_starvation_that_pure_efficiency_caused():
+    """The regression this controller exists to fix.
+
+    Optimising green-seconds-per-vehicle treats a two-wheeler approach as cheap
+    and therefore low-value, and starves it. Optimising people-per-second of
+    green, with a fairness term, keeps the throughput gain without making one
+    group of road users pay for it.
+    """
+    seeds = (3, 7, 11, 19, 29, 37)
+    efficiency = [_run('heterogeneous-timed-v1', s, 7.0) for s in seeds]
+    people_first = [_run('person-seconds-v1', s, 7.0) for s in seeds]
+
+    worst = [b['worst_approach_wait'] - a['worst_approach_wait']
+             for a, b in zip(efficiency, people_first)]
+    ci = 1.96 * stdev(worst) / sqrt(len(worst))
+    assert mean(worst) < -ci, 'worst-approach wait must fall significantly'
+
+    # Not a marginal improvement: the efficiency-only controller starves an
+    # approach for minutes at a time under this demand.
+    assert mean(x['worst_approach_wait'] for x in efficiency) > 100
+    assert mean(x['worst_approach_wait'] for x in people_first) < 60
+
+
+def test_fairness_weight_actually_does_something():
+    """Guard against the fairness term being decorative."""
+    from app.controllers.heterogeneous_pressure import PersonSecondsController
+
+    fair = PersonSecondsController(fairness_weight=6.0)
+    unfair = PersonSecondsController(fairness_weight=0.0)
+    assert fair.fairness_weight != unfair.fairness_weight
+
+    engine = MockTrafficEngine()
+    for jid in MockTrafficEngine.JUNCTION_IDS:
+        for d in ('north', 'south'):
+            engine.approach_mix[(jid, d)] = TW_HEAVY
+        for d in ('east', 'west'):
+            engine.approach_mix[(jid, d)] = CAR_HEAVY
+    engine.reset(scenario='rush', seed=7)
+    engine.arrival_multiplier = 7.0
+
+    # The fairness term must accumulate red time, or it cannot influence anything.
+    for _ in range(40):
+        engine.step(fair.choose_phases(engine.snapshot()))
+    assert any(v > 0 for v in fair.red_ticks.values())

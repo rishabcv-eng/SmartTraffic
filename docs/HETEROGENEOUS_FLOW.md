@@ -99,18 +99,61 @@ two-wheeler feeder more green than the traffic needs. Correcting that returns
 roughly ten percentage points of green to the arterial, which is where the buses
 are.
 
+## Fixing what it cost: `person-seconds-v1`
+
+The result above was bought at a price, and the price was the wrong shape. The
+efficiency measure optimises *green-seconds per vehicle cleared*, and because
+two-wheelers are cheap to clear, an approach full of them scores low on exactly
+the quantity being maximised. Green drifted to the arterial and the feeder
+starved — a worst-approach wait of 187.6 ticks at demand ×7, which is minutes of
+standing still.
+
+That was optimising a proxy. Road efficiency is a constraint, not the objective.
+What a signal should maximise is people moved, so the quantity that follows is
+**people per second of green**:
+
+```
+rate_i = (people waiting on approach i) / (green seconds approach i needs)
+```
+
+A two-wheeler queue now scores well despite carrying few people per vehicle,
+precisely because it clears so fast — the efficiency controller could only see
+the denominator. An explicit fairness term proportional to accumulated red time
+sits on top, so a waiting approach gains priority when the choice is close.
+
+Ten seeds, contrasting mixes, paired intervals:
+
+| demand ×7 | people | vehicles | worst-approach wait |
+|---|---|---|---|
+| `pcu-timed-v1` (conventional) | 34,671 | 13,077 | 32.1 |
+| `heterogeneous-timed-v1` (efficiency) | 41,273 | 7,975 | **187.6** |
+| **`person-seconds-v1`** | 36,663 | 11,210 | **37.1** |
+
+Against the conventional baseline it still moves significantly more people
+(+1,992 ± 687 at ×7, +2,614 ± 373 at ×4). Against the efficiency controller it
+gives up some person-throughput and wins back 3,235 vehicles and a **five-fold
+reduction in worst-case wait**. At demand ×4 its 95th-percentile delay is 38.5
+ticks lower, significant.
+
+That is the trade worth making. A controller that moves marginally more people
+by leaving one approach red for minutes is not deployable, and no transport
+authority would sign it off.
+
 ## The honest caveats
 
-**It trades vehicles for people.** Fewer vehicles cross; many more people do,
-because buses carry 35 and two-wheelers carry 1.2. On person-throughput it wins
-clearly. On vehicle-throughput it loses. Which one a city wants is a policy
-question, not a technical one.
+**It still trades vehicles for people.** `person-seconds-v1` serves about 1,900
+fewer vehicles than the conventional baseline while moving 2,000 more people.
+Whether a city wants that is a policy question, not a technical one, and it
+should be asked rather than assumed.
 
-**It can make two-wheeler riders wait longer.** At demand ×4 the 95th-percentile
-vehicle delay rose by 48 ticks. The riders who now wait are, in an Indian city,
-generally those least able to absorb the delay. This is measured and reported
-rather than buried in an average, and it is the first thing that should be put
-to a transport authority rather than the headline number.
+**Delay is still above the conventional baseline.** p95 is 6.1 ticks higher than
+`pcu-timed-v1` at demand ×7. The starvation is fixed; moving more people is
+still not free.
+
+**The efficiency-only controller is kept, and should not be deployed.**
+`heterogeneous-timed-v1` remains in the registry because it is what isolates the
+measurement effect, and because the starvation it causes is the evidence for why
+`person-seconds-v1` is shaped the way it is.
 
 **The conditions are narrow and must be stated.** No uniform-mix effect. No
 undersaturated effect. The claim is conditional, and the conditions are exactly

@@ -12,6 +12,7 @@ from app.controllers.heterogeneous_pressure import (
     HeterogeneousTimedController,
     PCUPressureController,
     PCUTimedController,
+    PersonSecondsController,
 )
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
@@ -35,6 +36,7 @@ CONTROLLERS: dict[str, type[Controller]] = {
     'heterogeneous-pressure-v1': HeterogeneousPressureController,
     'pcu-timed-v1': PCUTimedController,
     'heterogeneous-timed-v1': HeterogeneousTimedController,
+    'person-seconds-v1': PersonSecondsController,
     'rl-network-v2': RLController,
 }
 
