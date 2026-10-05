@@ -161,6 +161,30 @@ against fixed-time's 27. It had learned to keep a couple of approaches
 permanently red. Every headline claim here is reported alongside p95 and
 worst-approach wait for that reason.
 
+## Where the heterogeneous controller is worse
+
+`person-seconds-v1` wins where it was designed to and loses where it was not,
+and both belong in the record.
+
+Under the **default uniform mix** — every approach carrying the same traffic —
+it is measurably behind the conventional static-PCU controller, over 8 seeds at
+rush demand with paired intervals:
+
+| metric | person-seconds vs pcu-timed | verdict |
+| --- | --- | --- |
+| people moved | −252 ± 81 | significantly worse |
+| vehicles served | −74 ± 27 | significantly worse |
+| p95 delay | +1.5 ± 0.9 | significantly worse |
+
+Small, but real rather than noise: the fairness term costs something when there
+is no imbalance for it to correct. It only pays once competing approaches carry
+different mixes *and* green time is scarce — which is the Indian peak-hour case,
+but is not every case.
+
+The practical reading: `coordinated-pressure-v1` remains the default, because it
+has no weak regime. `person-seconds-v1` is the right choice for heterogeneous,
+unequal, saturated corridors specifically.
+
 ## Negative results worth recording
 
 Four refinements to `coordinated-pressure-v1` were implemented, measured over

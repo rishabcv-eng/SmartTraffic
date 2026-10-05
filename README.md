@@ -2,6 +2,47 @@
 
 **SIH PS90 — Adaptive Smart Traffic Signal Control**
 
+## What is actually new here
+
+Max-pressure control, green waves, emergency preemption, transit priority and RL
+for signals are all established work. They are implemented here, carefully, but
+they are not the contribution. Two things are.
+
+**1. Signal control imported from the West assumes lane discipline, and Indian
+traffic does not have it.** Two-wheelers filter into lateral gaps and discharge
+two or three abreast where one car fits. We model discharge from physical width
+and headway instead of a static PCU factor, and the conventional factor turns out
+to over-state two-wheeler discharge by **56%**, over-allocating green by **21.5%**
+at Indian traffic mixes. The model reproduces textbook saturation flow for cars
+*exactly*, so it departs from convention only where lane discipline does.
+
+Correcting the measure alone starved the two-wheeler road, so the controller
+optimises **people moved per second of green** with an explicit fairness term.
+Against what a deployed Indian system does today, on a scooter feeder meeting a
+bus arterial at saturation: **+1,900 people moved**, with worst-case waiting cut
+from 184 ticks to 37.
+
+**2. Two widely used evaluation metrics are gameable, and we show it.** Ranking
+controllers by average queue rewards *refusing* traffic — an approach held at red
+fills up and turns arrivals away, so they never appear in the statistic. And a
+queue-based RL reward taught a policy to keep approaches permanently red: lowest
+mean queue in the benchmark, 95th-percentile delay of 66 against fixed-time's 27.
+
+### Every number above is reproducible
+
+```bash
+python scripts/reproduce_results.py
+```
+
+It re-measures each documented claim, prints what it comes out at today, and
+**exits non-zero if any claim no longer holds** — including the negative results,
+which must stay negative. `docs/BENCHMARKS.md` and `docs/HETEROGENEOUS_FLOW.md`
+record what failed as well as what worked: four refinements measured over eight
+seeds with paired confidence intervals and rejected, and the conditions under
+which the heterogeneous result does *not* apply.
+
+---
+
 SmartTraffic is a local-first traffic-control prototype focused on a clear single-junction A/B demonstration: the same intersection and the same seeded vehicle arrivals are run under a conventional fixed-clock signal and under SmartTraffic's adaptive controller. The browser visualizes both simulations side-by-side with proper signal phases, queue spacing, and POV/bird's-eye views.
 
 ## Current judge-facing demo
@@ -28,7 +69,7 @@ questions a city asks after "does it work?".
 | Network health | Per-junction mode, delay distribution (p95, worst approach), pedestrian and bus waits. Inject detector, comms and signal-head faults and watch the fallback happen. |
 | Why this decision | Every phase change with the pressures behind it and the constraint that overrode the optimiser. |
 | City impact | Idle fuel, CO₂ and rupees saved per year, pooled over five seeds, with every assumption listed. |
-| Controller benchmark | All eight controllers ranked, with fairness and person-delay columns beside the averages. |
+| Controller benchmark | All fifteen controllers ranked, with fairness and person-delay columns beside the averages. |
 | Green wave | Corridor offsets, through-band width, and a time-space diagram. |
 | Emergency priority | Ambulance travel time with and without preemption, plus what the rest of the traffic paid. |
 | What-if planner | Demand, weather, footfall and infrastructure failure, answered across seeds with 95% confidence intervals. |
@@ -59,6 +100,15 @@ questions a city asks after "does it work?".
   `docs/BENCHMARKS.md`.
 - **It collects counts, not identities.** No ANPR, no faces, no image retention.
   See `docs/PRIVACY.md`.
+
+## Verifying the claims
+
+| command | what it checks |
+| --- | --- |
+| `python scripts/reproduce_results.py` | every headline number in the docs, with pass/fail |
+| `cd backend && pytest -q` | 119 tests, including the negative results |
+| `curl localhost:8000/api/saturation/report` | the lane-less discharge study, live |
+| `curl localhost:8000/api/benchmark/suite` | all controllers across seeds and disturbances |
 
 ## Run locally
 
