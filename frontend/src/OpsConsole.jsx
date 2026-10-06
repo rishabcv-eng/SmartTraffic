@@ -21,6 +21,7 @@ const TABS = [
   ['ev',        'Emergency priority'],
   ['whatif',    'What-if planner'],
   ['data',      'Calibration & sensing'],
+  ['fleet',     'Mixed fleet (novel)'],
 ]
 
 const FAULTS = [
@@ -731,9 +732,175 @@ function DataTab() {
 
 /* -------------------------------------------------------------------- shell */
 
+/* --------------------------------------------------------------- mixed fleet */
+
+function FleetTab() {
+  const [study, setStudy] = useState(null)
+  const [report, setReport] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [demand, setDemand] = useState(7)
+  const [contrast, setContrast] = useState(true)
+
+  useEffect(() => {
+    api('/api/saturation/report').then(setReport).catch(e => setError(e.message))
+  }, [])
+
+  const run = () => {
+    setBusy(true); setError('')
+    api('/api/fleet/compare', {
+      method: 'POST',
+      body: JSON.stringify({
+        seeds: [3, 7, 11, 19, 29, 37, 41, 53],
+        demand_multiplier: Number(demand),
+        contrast,
+        steps: 200,
+      }),
+    }).then(setStudy).catch(e => setError(e.message)).finally(() => setBusy(false))
+  }
+
+  const curve = report?.error_vs_two_wheeler_share || []
+  const maxErr = Math.max(1, ...curve.map(r => r.error_pct))
+
+  return (
+    <>
+      <Panel
+        title="Why static PCU is wrong on Indian roads"
+        blurb="Signal theory assumes vehicles queue in lanes. Two-wheelers filter into lateral gaps and cross two or three abreast where one car fits, so what limits the stop line is lateral space, not a factor calibrated for moving traffic."
+      >
+        <Loading error={error} empty={!report} />
+        {report && (
+          <>
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr><th>Class</th><th>Static PCU</th><th>Implied by discharge</th>
+                      <th>Over-stated by</th></tr>
+                </thead>
+                <tbody>
+                  {report.classes.map(c => (
+                    <tr key={c.class}>
+                      <td><strong>{c.class}</strong></td>
+                      <td>{c.static_pcu}</td>
+                      <td>{c.implied_pcu}</td>
+                      <td className={c.overstatement_pct > 20 ? 'bad' : ''}>
+                        {c.overstatement_pct > 0 ? '+' : ''}{c.overstatement_pct}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="ops-muted">
+              The model reproduces textbook saturation flow for cars <em>exactly</em> (implied
+              PCU 1.000), so it departs from convention only where lane discipline does.
+            </p>
+
+            <h4>Green wasted, by two-wheeler share</h4>
+            <div className="fleet-bars">
+              {curve.map(r => (
+                <div key={r.two_wheeler_share} className="fleet-bar">
+                  <div className="fleet-bar-track">
+                    <div className="fleet-bar-fill"
+                         style={{ height: `${(r.error_pct / maxErr) * 100}%` }} />
+                  </div>
+                  <strong>{r.error_pct}%</strong>
+                  <span>{Math.round(r.two_wheeler_share * 100)}%</span>
+                </div>
+              ))}
+            </div>
+            <p className="ops-muted">
+              Share of two-wheelers in the queue (bottom) against the green a static-PCU
+              controller allocates beyond what the traffic needs. Indian urban arterials
+              run at roughly 45%.
+            </p>
+          </>
+        )}
+      </Panel>
+
+      <Panel
+        title="Three ways of measuring pressure, same traffic"
+        blurb="A two-wheeler feeder meeting a bus arterial. Turn the contrast off and the effect should vanish — the bias applies to both approaches equally and cancels. That control condition is part of the claim."
+        actions={
+          <span className="ops-inline">
+            <label>Demand
+              <input type="range" min="1" max="10" step="1" value={demand}
+                     onChange={e => setDemand(e.target.value)} />
+              <span>×{demand}</span>
+            </label>
+            <label className="fleet-check">
+              <input type="checkbox" checked={contrast}
+                     onChange={e => setContrast(e.target.checked)} />
+              different mixes
+            </label>
+            <button onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run study'}</button>
+          </span>
+        }
+      >
+        <Loading error={error} busy={busy} empty={!study} />
+        {study && (
+          <>
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr><th>Measure of pressure</th><th>People moved</th><th>Vehicles</th>
+                      <th>p95 delay</th><th>Worst approach wait</th></tr>
+                </thead>
+                <tbody>
+                  {study.rows.map(r => (
+                    <tr key={r.controller}>
+                      <td><strong>{r.label}</strong></td>
+                      <td>{Math.round(r.served_people).toLocaleString('en-IN')}</td>
+                      <td>{Math.round(r.served_vehicles).toLocaleString('en-IN')}</td>
+                      <td>{r.p95_vehicle_delay}</td>
+                      <td className={r.worst_approach_wait > 100 ? 'bad' : ''}>
+                        {r.worst_approach_wait}
+                        {r.worst_approach_wait > 100 ? ' ← starving' : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h4>Against what is deployed today</h4>
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr><th>Controller</th>
+                      {Object.values(study.tracked).map(t => <th key={t}>{t}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {study.vs_static_pcu.map(d => (
+                    <tr key={d.controller}>
+                      <td><strong>{d.controller}</strong></td>
+                      {Object.keys(study.tracked).map(k => {
+                        const m = d.metrics[k]
+                        return (
+                          <td key={k} className={m.significant ? (m.mean > 0 ? 'good' : 'bad') : 'ops-muted'}>
+                            {m.mean > 0 ? '+' : ''}{m.mean} <em>± {m.ci}</em>
+                            {!m.significant && <em> (noise)</em>}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="ops-muted">{study.reading}</p>
+            <p className="ops-muted"><strong>Caveat:</strong> {study.caveat}</p>
+          </>
+        )}
+      </Panel>
+    </>
+  )
+}
+
 const TAB_VIEWS = {
   health: HealthTab, why: WhyTab, impact: ImpactTab, bench: BenchTab,
   wave: WaveTab, ev: EmergencyTab, whatif: WhatIfTab, data: DataTab,
+  fleet: FleetTab,
 }
 
 export default function OpsConsole() {

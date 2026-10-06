@@ -15,6 +15,7 @@ from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor, run_p
 from app.services.greenwave import plan_green_wave
 from app.services.impact import ImpactAssumptions, compare_impact
 from app.services.runner import RunConfig, SimulationRunner
+from app.services.fleet_study import compare_fleet
 from app.services.saturation import comparison_report
 from app.services.scenario import ScenarioConfig, simulate
 from app.services.single_junction import run_single_junction_comparison
@@ -91,6 +92,13 @@ class WhatIfRequest(BaseModel):
     lane_closure: dict | None = None
     event: str | None = None
     shielded: bool = True
+
+
+class FleetStudyRequest(BaseModel):
+    seeds: list[int] | None = None
+    demand_multiplier: float = 7.0
+    contrast: bool = True
+    steps: int = 200
 
 
 class CalibrationRequest(BaseModel):
@@ -256,6 +264,17 @@ def comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps:
 
 
 # ----------------------------------------------------------------- green wave
+
+@app.post('/api/fleet/compare')
+def fleet_compare(body: FleetStudyRequest):
+    """Three ways of measuring pressure, run live on identical traffic."""
+    return compare_fleet(
+        seeds=body.seeds,
+        demand_multiplier=max(0.5, min(body.demand_multiplier, 12.0)),
+        contrast=body.contrast,
+        steps=body.steps,
+    )
+
 
 @app.get('/api/saturation/report')
 def saturation_report(lanes: float = 2.0):
