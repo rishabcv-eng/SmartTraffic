@@ -218,6 +218,25 @@ function ResultStrip() {
   )
 }
 
+/* A frame-rate readout, so smoothness is something you can check rather than
+   argue about. Sampled over a second; costs one rAF callback. */
+function FpsMeter() {
+  const [fps, setFps] = React.useState(null)
+  React.useEffect(() => {
+    let frames = 0, last = performance.now(), raf = 0, alive = true
+    const tick = now => {
+      frames++
+      if (now - last >= 1000) { setFps(Math.round(frames * 1000 / (now - last))); frames = 0; last = now }
+      if (alive) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { alive = false; cancelAnimationFrame(raf) }
+  }, [])
+  if (fps === null) return null
+  const tone = fps >= 50 ? 'good' : fps >= 30 ? 'warn' : 'bad'
+  return <span className={`fps ${tone}`} title="frames per second">{fps} fps</span>
+}
+
 function Metric({ label, value, hint }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div>
 }
@@ -373,7 +392,8 @@ function makePerson(i){
   const head = new THREE.Mesh(new THREE.SphereGeometry(.17,12,12),
     new THREE.MeshStandardMaterial({ color:0x9a6b4f, roughness:.8 }))
   head.position.y = 1.36
-  ;[legs,torso,head].forEach(m=>{ m.castShadow = true })
+  /* People are small and numerous: twenty of them is sixty extra casters in the
+     shadow pass, for a contact shadow nobody looks at. */
   g.add(legs,torso,head)
   g.userData = { legs, torso, phase: Math.random()*Math.PI*2 }
   return g
@@ -452,7 +472,7 @@ function buildVehicle(kind, variantIdx){
     g.add(part(kit, kit.mat.trim, v.w*.95, .1, .5, 0, .92, -v.d*.3, false))   // handlebar
     g.add(part(kit, kit.mat.rider, .46, .72, .38, 0, 1.12, v.d*.06, true))    // rider
     const helmet = new THREE.Mesh(new THREE.SphereGeometry(.19,10,10), kit.mat.helmet)
-    helmet.position.set(0,1.6,v.d*.04); helmet.castShadow = true; g.add(helmet)
+    helmet.position.set(0,1.6,v.d*.04); g.add(helmet)
     g.add(part(kit, kit.mat.head, .16, .12, .1, 0, .78, -v.d*.46, false))
   }
 
@@ -530,7 +550,9 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     scene.fog = new THREE.Fog(0x14202b, 62, 172)
     const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 250)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    /* A 2x pixel ratio quadruples the fragments shaded, and two of these scenes
+       run side by side. 1.5 keeps the edges clean for a fraction of the cost. */
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     /* Filmic tone mapping and a correct output colour space. Without these,
        three.js renders linear values straight to screen, which is what makes
        an untouched scene look flat and plasticky. */
@@ -695,7 +717,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       const tr = new THREE.Mesh(new THREE.CylinderGeometry(.2,.26,2.2), trunkMat)
       tr.position.set(x,1.6,z); scene.add(tr)
       const cr = new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8), leafMat)
-      cr.position.set(x,3.4,z); cr.scale.y = .82; cr.castShadow = true; scene.add(cr)
+      cr.position.set(x,3.4,z); cr.scale.y = .82; scene.add(cr)
     })
 
     /* ---------- street lighting ---------- */
@@ -871,13 +893,41 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     resize()
     const ro = new ResizeObserver(resize); ro.observe(host)
 
+    /* Buildings, roads, kerbs, lamps and trees never move. Freezing their
+       matrices takes them out of the per-frame world-matrix walk entirely,
+       which matters here because the scene holds thousands of objects. */
+    const movers = new Set()
+    Object.values(pools).forEach(list => list.forEach(c => movers.add(c)))
+    departPool.forEach(c => movers.add(c))
+    people.forEach(pr => movers.add(pr))
+    movers.add(evGroup)
+    scene.traverse(obj => {
+      if (obj === scene || movers.has(obj)) return
+      let node = obj, moving = false
+      while (node && node !== scene) { if (movers.has(node)) { moving = true; break } node = node.parent }
+      if (moving) return
+      obj.updateMatrix()
+      obj.matrixAutoUpdate = false
+    })
+
     ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,phase:'NS',
       queues:{north:0,south:0,east:0,west:0},types:null,departPool,departQueue:[],
       evGroup,evBody,evBeacon,evGlow,ev:null,people,pedSignals,streetLamps}
 
+    /* Two WebGL scenes rendering while the reader is somewhere else on the page
+       is pure waste, and it is what makes the whole page feel heavy. Render only
+       while this one is actually on screen. */
+    let onScreen = true
+    const vis = new IntersectionObserver(
+      ([e]) => { onScreen = e.isIntersecting },
+      { rootMargin: '120px' },
+    )
+    vis.observe(host)
+
     const clock = new THREE.Clock(); let raf=0
     const animate=()=>{
       raf=requestAnimationFrame(animate)
+      if(!onScreen || document.hidden){ clock.getDelta(); return }
       const dt=Math.min(clock.getDelta(),.05)
       const t=clock.getElapsedTime()
       const c=ctx.current
@@ -1007,7 +1057,8 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       c.renderer.render(c.scene,c.camera)
     }
     animate()
-    return()=>{cancelAnimationFrame(raf);ro.disconnect();renderer.dispose();host.innerHTML='';ctx.current=null}
+    return()=>{cancelAnimationFrame(raf);ro.disconnect();vis.disconnect();
+      renderer.dispose();host.innerHTML='';ctx.current=null}
   },[])
 
   useEffect(()=>{
@@ -1789,7 +1840,7 @@ function App(){
   return <main>
     <header className="hero">
       <div><p className="eyebrow">Design of Smart Cities · adaptive signal control for lane-less traffic</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
-      <div className="hero-status">{error?'BACKEND OFFLINE':'LOCAL A/B'}</div>
+      <div className="hero-status">{error?'BACKEND OFFLINE':'LOCAL A/B'}<FpsMeter/></div>
     </header>
 
     <ResultStrip/>

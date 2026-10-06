@@ -428,3 +428,11 @@
 @media (prefers-reduced-motion: reduce){
   .tug-fill{transition:none}
 }
+
+/* Frame-rate readout in the status badge. */
+.fps{margin-left:10px;font-size:.66rem;font-weight:700;letter-spacing:.04em;
+  padding:2px 7px;border-radius:999px;vertical-align:middle;
+  font-variant-numeric:tabular-nums}
+.fps.good{background:rgba(99,226,154,.14);color:#63e29a;border:1px solid #2f7d52}
+.fps.warn{background:rgba(240,194,116,.14);color:#f0c274;border:1px solid #7d6330}
+.fps.bad{background:rgba(255,90,90,.14);color:#ff8f8f;border:1px solid #7d3030}
