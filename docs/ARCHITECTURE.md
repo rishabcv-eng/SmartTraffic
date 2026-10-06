@@ -1,6 +1,6 @@
 # Architecture
 
-SmartTraffic separates sensing, control logic, and simulation so SIH demo inputs can evolve independently.
+SmartTraffic separates sensing, control logic, and simulation so demo inputs can evolve independently.
 
 ## Core contracts
 
@@ -10,7 +10,7 @@ SmartTraffic separates sensing, control logic, and simulation so SIH demo inputs
 
 This prevents CV, SUMO, and UI experiments from being coupled to one algorithm.
 
-## Final SIH architecture
+## Target architecture
 
 `CCTV/image upload -> vehicle/queue extraction -> map matching -> network state -> short-horizon prediction -> coordinated controller -> SUMO replay -> web visualization`.
 

@@ -45,7 +45,7 @@
 - [x] Sensor and signal fault fallback with an explicit fallback ladder
 - [x] Weather-reduced saturation flow
 
-## M6 — SIH demonstration
+## M6 — final demonstration
 - [x] Side-by-side baseline vs SmartTraffic simulation
 - [x] Reproducible benchmark report
 - [x] Operations console: impact, audit, faults, planner

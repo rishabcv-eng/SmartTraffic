@@ -45,7 +45,7 @@ def detector_status() -> dict:
         'backend': 'ultralytics-yolo',
         'available': available,
         'weights': weights,
-        'note': 'Install ultralytics and provide weights locally for offline SIH use.' if not available else 'ready',
+        'note': 'Install ultralytics and provide weights locally for offline use.' if not available else 'ready',
     }
 
 

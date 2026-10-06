@@ -1,5 +1,5 @@
 /*
- * SmartTraffic — SIH PS90 presentation deck.
+ * SmartTraffic — Design of Smart Cities presentation deck.
  *
  * Every figure here is produced by the repository, not written by hand:
  * `python scripts/reproduce_results.py` regenerates each one and fails if it
@@ -80,7 +80,7 @@ pres.defineSlideMaster({
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
       fontSize: 36, bold: true, color: C.text1 }, text: '' } },
-    { text: { text: 'SmartTraffic · SIH PS90', options: { x: M, y: 6.85, w: 5, h: 0.3,
+    { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 5, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
   slideNumber: { x: W - M - 0.5, y: 6.85, w: 0.5, h: 0.3, fontSize: 10,
@@ -93,7 +93,7 @@ pres.defineSlideMaster({
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
       fontSize: 36, bold: true, color: C.background1 }, text: '' } },
-    { text: { text: 'SmartTraffic · SIH PS90', options: { x: M, y: 6.85, w: 5, h: 0.3,
+    { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 5, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
   slideNumber: { x: W - M - 0.5, y: 6.85, w: 0.5, h: 0.3, fontSize: 10,
@@ -162,7 +162,7 @@ let s = pres.addSlide({ masterName: 'DARK_TITLE', sectionTitle: 'Opening' })
 s.addText('SmartTraffic', { placeholder: 'title' })
 s.addText([
   { text: 'Adaptive signal control built for lane-less Indian traffic', options: { breakLine: true } },
-  { text: 'SIH PS90   ·   15 controllers   ·   119 tests   ·   every claim reproducible',
+  { text: 'Design of Smart Cities   ·   15 controllers   ·   119 tests   ·   every claim reproducible',
     options: { fontSize: 13, color: THEME.colors.accent1 } },
 ], { placeholder: 'body' })
 card(s, M, 5.75, 6.6, 1.15, THEME.colors.dk2, 'team card')
@@ -548,7 +548,7 @@ s.addNotes(
   'runs the whole study in front of them, and the control condition is a checkbox.')
 
 /* --------------------------------------------------------------- write out */
-const out = path.join(__dirname, 'SmartTraffic-SIH-PS90.pptx')
+const out = path.join(__dirname, 'SmartTraffic-full.pptx')
 pres.writeFile({ fileName: out })
   .then(() => applyTheme(out, THEME))
   .then(() => console.log('wrote', out))

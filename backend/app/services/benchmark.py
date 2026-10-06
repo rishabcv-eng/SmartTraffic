@@ -193,5 +193,5 @@ def run_benchmark_suite(
         'raw': raw,
         'best_controller': best,
         'impact_vs_fixed_time': impact,
-        'note': 'Mock-engine development benchmark only; final SIH claims must be regenerated in SUMO/TraCI.',
+        'note': 'Mock-engine development benchmark only; final performance claims must be regenerated in SUMO/TraCI.',
     }

@@ -29,7 +29,7 @@ Metrics include:
 - phase switches
 - percentage improvement versus fixed-time
 
-The suite is deterministic for a given seed set. It is a **development benchmark only**. Final SIH performance claims must be regenerated using SUMO/TraCI on imported road networks.
+The suite is deterministic for a given seed set. It is a **development benchmark only**. Final performance claims must be regenerated using SUMO/TraCI on imported road networks.
 
 ## Why predictive pressure v2
 

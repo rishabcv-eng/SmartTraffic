@@ -59,7 +59,7 @@ pres.defineSlideMaster({
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
       fontSize: 36, bold: true, color: C.text1 }, text: '' } },
-    { text: { text: 'SmartTraffic · SIH PS90', options: { x: M, y: 6.85, w: 6, h: 0.3,
+    { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 6, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
   slideNumber: { x: W - M - 0.5, y: 6.85, w: 0.5, h: 0.3, fontSize: 10,
@@ -72,7 +72,7 @@ pres.defineSlideMaster({
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
       fontSize: 36, bold: true, color: C.background1 }, text: '' } },
-    { text: { text: 'SmartTraffic · SIH PS90', options: { x: M, y: 6.85, w: 6, h: 0.3,
+    { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 6, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
   slideNumber: { x: W - M - 0.5, y: 6.85, w: 0.5, h: 0.3, fontSize: 10,
@@ -116,7 +116,7 @@ const chartBase = {
 pres.addSection({ title: 'Deck' })
 let s = pres.addSlide({ masterName: 'DARK_TITLE', sectionTitle: 'Deck' })
 s.addText('SmartTraffic', { placeholder: 'title' })
-s.addText('Adaptive signal control built for lane-less Indian traffic   ·   SIH PS90',
+s.addText('Adaptive signal control built for lane-less Indian traffic   ·   Design of Smart Cities',
   { placeholder: 'body' })
 card(s, M, 4.6, 6.6, 1.35, THEME.colors.dk2, 'team card')
 s.addText([

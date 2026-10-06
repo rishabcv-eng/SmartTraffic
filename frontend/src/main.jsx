@@ -1785,7 +1785,7 @@ function App(){
 
   return <main>
     <header className="hero">
-      <div><p className="eyebrow">SIH PS90 · adaptive signal control for lane-less traffic</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
+      <div><p className="eyebrow">Design of Smart Cities · adaptive signal control for lane-less traffic</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
       <div className="hero-status">{error?'BACKEND OFFLINE':'LOCAL A/B'}</div>
     </header>
 

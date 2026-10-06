@@ -1,4 +1,4 @@
-# SIH Demo Flow
+# Demo Flow
 
 ## Judge sequence
 1. Open the SmartTraffic control room.
@@ -19,7 +19,7 @@
 - emergency corridor scheduling
 - image upload API with explicit optional YOLO runtime
 
-## What must be validated on the SIH machine
+## What must be validated on the demo machine
 - actual SUMO execution and TraCI timing
 - imported OpenStreetMap corridor topology
 - YOLO weight file and test-image accuracy
