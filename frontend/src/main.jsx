@@ -517,7 +517,7 @@ function buildVehicle(kind, variantIdx){
   return g
 }
 
-function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, frames, tick, winning, peers }) {
+function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, frames, tick, winning, peers, leading }) {
   const mount = useRef(null)
   const ctx = useRef(null)
 
@@ -1048,7 +1048,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
   },[mode])
 
   const shownPhase = phase || frame?.phase
-  return <section className={`sim-card ${accent}`}>
+  return <section className={`sim-card ${accent} ${leading ? 'leading' : ''}`}>
     <div className="sim-title-row">
       <div><h2>{title}</h2><p>{title.includes('Fixed') ? 'Conventional clock-timed cycle' : 'Queue-aware predictive control'}</p></div>
       <div className="phase-readout"><SignalHead phase={shownPhase||'NS'} axis="NS"/><span>{phaseLabel(shownPhase)}</span></div>
@@ -1780,6 +1780,9 @@ function App(){
   },[data,tick])
 
   const prof = profiles[evType] || EV_FALLBACK[evType]
+  /* Which twin is ahead right now, so the winning panel can show it. */
+  const leader = cmp?.mean > 2 ? 'smart' : cmp?.mean < -2 ? 'fixed' : null
+
   const evSmart = ev && ev.active ? {...ev, dist:ev.distSmart} : null
   const evFixed = ev && ev.active ? {...ev, dist:ev.distFixed} : null
 
@@ -1916,6 +1919,14 @@ function App(){
         <small>vehicles{fixed?.total_pcu!==undefined?` · ${fixed.total_pcu} PCU`:''}</small></div>
       <div className="d-mid">
         <span className="d-label">{incident==='none'?'live difference':INCIDENTS[incident].label}</span>
+        {/* Which side is ahead, drawn rather than described. The bar leans
+            towards whoever is winning and is dead centre when they are level. */}
+        <div className="tug" aria-hidden="true">
+          <div className="tug-track">
+            <div className="tug-fill"
+                 style={{ width: `${Math.min(96, Math.max(4, 50 + (cmp?.mean ?? 0) * 1.6))}%` }}/>
+          </div>
+        </div>
         <strong className={cmp?.mean>0?'good':cmp?.mean<0?'bad':''}>
           {cmp?.mean===null||cmp?.mean===undefined ? '—' : `${Math.abs(cmp.mean)}%`}
         </strong>
@@ -1934,11 +1945,11 @@ function App(){
     </div>
 
     <div className="comparison-grid">
-      <IntersectionTwin frame={fixed} mode={view} title="Fixed Clock Signal" accent="baseline"
+      <IntersectionTwin frame={fixed} mode={view} title="Fixed Clock Signal" accent="baseline" leading={leader==='fixed'}
         phase={fixed?.phase} ev={evFixed} preempting={false}
         frames={data?.fixed.frames} tick={tick} peers={peerMax}
         winning={fixed&&adaptive?fixed.total_queue<adaptive.total_queue:null}/>
-      <IntersectionTwin frame={adaptive} mode={view} title="SmartTraffic Adaptive" accent="smart"
+      <IntersectionTwin frame={adaptive} mode={view} title="SmartTraffic Adaptive" accent="smart" leading={leader==='smart'}
         phase={ev&&ev.active&&ev.preempting?ev.axis:adaptive?.phase}
         ev={evSmart} preempting={!!(ev&&ev.active&&ev.preempting)}
         frames={data?.adaptive.frames} tick={tick} peers={peerMax}

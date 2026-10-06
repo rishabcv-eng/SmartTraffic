@@ -382,3 +382,49 @@
   .finding:hover,.demo-card:hover,.ops-stat:hover,.ops-tabs button:hover,
   .findings-jump:hover{transform:none}
 }
+
+
+/* ================================================ live difference readout == */
+/* The one number the whole demo turns on. It was 14px of grey. */
+.delta-strip .d-mid strong{font-size:3.4rem;line-height:1.02;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 28px rgba(143,216,255,.22);transition:color .4s ease,text-shadow .4s ease}
+.delta-strip .d-mid strong.good{color:#63e29a;text-shadow:0 0 34px rgba(99,226,154,.4)}
+.delta-strip .d-mid strong.bad{color:#ff8f8f;text-shadow:0 0 34px rgba(255,90,90,.35)}
+.delta-strip .d-label{letter-spacing:.14em}
+
+/* Tug-of-war bar: leans towards whichever controller is ahead. */
+.tug{width:100%;max-width:360px;margin:7px auto 5px;flex:0 0 auto;align-self:center}
+.tug-track{position:relative;height:7px;border-radius:999px;overflow:hidden;
+  background:linear-gradient(90deg,rgba(255,90,90,.35) 0,rgba(255,90,90,.12) 46%,
+    rgba(99,226,154,.12) 54%,rgba(99,226,154,.35) 100%)}
+.tug-fill{height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#3a6ea8 0,#63e29a 100%);
+  box-shadow:0 0 16px rgba(99,226,154,.45);
+  transition:width .7s cubic-bezier(.22,.8,.3,1)}
+.tug-track::after{content:'';position:absolute;left:50%;top:-3px;width:1px;height:13px;
+  background:rgba(255,255,255,.35);transform:translateX(-.5px)}
+
+/* The side readouts earn their colours. */
+.delta-strip .d-side strong{font-size:2.1rem;font-variant-numeric:tabular-nums;
+  transition:color .4s ease}
+.delta-strip .d-side.win strong{color:#63e29a}
+.delta-strip .d-side.lose strong{color:#ff8f8f}
+
+/* ---------------------------------------------- the twin that is ahead ---- */
+.sim-card{position:relative;transition:box-shadow .5s ease,border-color .5s ease}
+.sim-card.leading{border-color:#2f7d52;
+  box-shadow:0 0 0 1px rgba(99,226,154,.25),0 16px 46px rgba(0,0,0,.5),
+    0 0 46px rgba(99,226,154,.10)}
+/* The card already carries a winning ribbon, so the leading state is shown by
+   the glow alone rather than by a second badge saying the same thing. */
+
+/* ------------------------------------------------------------ scene frame - */
+/* A faint vignette so the 3D view reads as a screen, not a pasted rectangle. */
+.twin{position:relative}
+.twin::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  box-shadow:inset 0 0 70px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+
+@media (prefers-reduced-motion: reduce){
+  .tug-fill{transition:none}
+}
