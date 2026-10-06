@@ -92,6 +92,70 @@ const PROFILES = {
 const EV_START_DIST = 110      // distance units behind the stop line at dispatch
 const EV_SPEED = 7.5           // units per tick
 
+/* Motion.
+
+   Everything here is opt-out under prefers-reduced-motion, and nothing moves
+   that carries meaning on its own -- the numbers animate to the value the
+   backend returned, they do not invent one. */
+const REDUCED = typeof matchMedia === 'function'
+  && matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/* Reveal elements as they scroll into view. One observer for the whole page
+   rather than one per element. */
+function useScrollReveal(deps = []) {
+  React.useEffect(() => {
+    if (REDUCED) {
+      document.querySelectorAll('.reveal').forEach(el => el.classList.add('shown'))
+      return
+    }
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('shown')
+          io.unobserve(e.target)
+        }
+      })
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' })
+
+    const targets = document.querySelectorAll('.reveal:not(.shown)')
+    targets.forEach(el => io.observe(el))
+    return () => io.disconnect()
+  }, deps)   // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/* Count a number up once, when it first becomes visible. */
+function CountUp({ value, decimals = 0, prefix = '', suffix = '', duration = 1100 }) {
+  const ref = React.useRef(null)
+  const [shown, setShown] = React.useState(REDUCED ? value : 0)
+
+  React.useEffect(() => {
+    if (REDUCED) { setShown(value); return }
+    const el = ref.current
+    if (!el) return
+    let raf = 0
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return
+      io.disconnect()
+      const start = performance.now()
+      const tick = now => {
+        const t = Math.min(1, (now - start) / duration)
+        // ease-out cubic: fast first, settles on the real figure
+        setShown(value * (1 - Math.pow(1 - t, 3)))
+        if (t < 1) raf = requestAnimationFrame(tick)
+        else setShown(value)
+      }
+      raf = requestAnimationFrame(tick)
+    }, { threshold: 0.4 })
+    io.observe(el)
+    return () => { io.disconnect(); cancelAnimationFrame(raf) }
+  }, [value, duration])
+
+  const text = decimals
+    ? shown.toFixed(decimals)
+    : Math.round(shown).toLocaleString('en-IN')
+  return <span ref={ref}>{prefix}{text}{suffix}</span>
+}
+
 /* Headline findings, stated before the visitor has to scroll six thousand
    pixels to discover them. The two-wheeler figure is fetched live so the page
    cannot quote a number the code no longer produces; the rest link through to
@@ -122,8 +186,8 @@ function ResultStrip() {
         <button className="findings-jump" onClick={jump}>Run it yourself →</button>
       </div>
       <div className="findings-grid">
-        <article className="finding">
-          <strong>{pcu ? `${pcu.overstatement_pct}%` : '56%'}</strong>
+        <article className="finding reveal">
+          <strong><CountUp value={pcu ? pcu.overstatement_pct : 56.2} decimals={1} suffix="%"/></strong>
           <h3>The standard factor is wrong for Indian traffic</h3>
           <p>
             Signal theory assumes vehicles queue in lanes. Two-wheelers cross two or three
@@ -131,8 +195,8 @@ function ResultStrip() {
             they need{pcu ? ` — ${pcu.static_pcu} against a real ${pcu.implied_pcu}` : ''}.
           </p>
         </article>
-        <article className="finding accent">
-          <strong>+1,911</strong>
+        <article className="finding accent reveal">
+          <strong><CountUp value={1911} prefix="+"/></strong>
           <h3>More people moved per run</h3>
           <p>
             Measuring pressure in people per second of green, against what a deployed Indian
@@ -140,7 +204,7 @@ function ResultStrip() {
             Worst-case waiting fell from 184 ticks to 37.
           </p>
         </article>
-        <article className="finding">
+        <article className="finding reveal">
           <strong>10/10</strong>
           <h3>Claims that re-run on demand</h3>
           <p>
@@ -1678,6 +1742,9 @@ function App(){
     setRunning(true)
   }
 
+  /* Reveal-on-scroll, re-armed whenever new sections appear. */
+  useScrollReveal([data, corr, demo])
+
   const fs=data?.fixed.summary
   const as=data?.adaptive.summary
   const queueGain=fs&&as?Math.round((1-as.average_queue/fs.average_queue)*100):0
@@ -1747,7 +1814,7 @@ function App(){
       <label>Speed<select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="0.25">0.25× — frame by frame</option><option value="0.5">0.5× — slow</option><option value="1">1× — normal</option><option value="2">2×</option><option value="4">4× — fast</option></select></label>
     </div>
 
-    <section className="demos">
+    <section className="demos reveal">
       <div className="demo-head">
         <h2>Judge demo — three scenarios</h2>
         <p>One click each. Every scenario feeds both controllers identical seeded arrivals and the identical disruption.</p>
@@ -1768,7 +1835,7 @@ function App(){
     </section>
 
     {/* ---------------- EMERGENCY PRIORITY BAR ---------------- */}
-    <section className="ev-bar">
+    <section className="ev-bar reveal">
       <div className="ev-head">
         <h2>Emergency vehicle priority</h2>
         <p>Dispatch a priority vehicle into the same junction on both sides. The adaptive controller
@@ -1878,7 +1945,7 @@ function App(){
         winning={fixed&&adaptive?adaptive.total_queue<fixed.total_queue:null}/>
     </div>
 
-    <section className="chennai">
+    <section className="chennai reveal">
       <div className="chn-head">
         <div>
           <h2>Calibrated against measured Chennai traffic</h2>
@@ -1901,7 +1968,7 @@ function App(){
         A driver covers only {CHENNAI.kmIn15min} km in 15 minutes at this congestion level.</p>
     </section>
 
-    {impact && <section className="impact">
+    {impact && <section className="impact reveal">
       <div className="imp-title">Cumulative effect at T+{tick} · <span>identical arrivals, identical disruption</span></div>
       <div className="imp-grid">
         <div className="imp"><span>Vehicle-ticks of waiting avoided</span><strong>{impact.waitSaved.toLocaleString()}</strong>
