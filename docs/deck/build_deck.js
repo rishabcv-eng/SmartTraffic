@@ -56,7 +56,7 @@ pres.defineSlideMaster({
   background: { color: THEME.colors.dk1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 2.5, w: W - 2 * M, h: 1.5,
-      fontSize: 44, bold: true, color: C.background1 }, text: '' } },
+      fontSize: 44, bold: true, color: C.background1, align: 'left' }, text: '' } },
     { placeholder: { options: { name: 'body', type: 'body', x: M, y: 4.1, w: W - 2 * M, h: 1.5,
       fontSize: 17, color: THEME.colors.accent5 }, text: '' } },
   ],
@@ -67,7 +67,7 @@ pres.defineSlideMaster({
   background: { color: THEME.colors.dk2 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 2.9, w: W - 2 * M, h: 1.2,
-      fontSize: 38, bold: true, color: THEME.colors.accent1 }, text: '' } },
+      fontSize: 38, bold: true, color: THEME.colors.accent1, align: 'left' }, text: '' } },
     { placeholder: { options: { name: 'body', type: 'body', x: M, y: 4.1, w: W - 2 * M, h: 1.2,
       fontSize: 17, color: C.background1 }, text: '' } },
   ],
@@ -79,7 +79,7 @@ pres.defineSlideMaster({
   background: { color: C.background1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
-      fontSize: 36, bold: true, color: C.text1 }, text: '' } },
+      fontSize: 36, bold: true, color: C.text1, align: 'left' }, text: '' } },
     { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 5, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
@@ -92,7 +92,7 @@ pres.defineSlideMaster({
   background: { color: THEME.colors.dk1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
-      fontSize: 36, bold: true, color: C.background1 }, text: '' } },
+      fontSize: 36, bold: true, color: C.background1, align: 'left' }, text: '' } },
     { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 5, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
@@ -152,6 +152,7 @@ const chartBase = {
   valAxisLabelFontFace: '+mn-lt',
   dataLabelFontFace: '+mn-lt',
   dataLabelFontSize: 11,
+  valAxisMinVal: 0,
   catGridLine: { style: 'none' },
   valGridLine: { color: 'DCE4EB', size: 1 },
 }
@@ -257,6 +258,7 @@ s.addChart(pres.ChartType.bar, [
   barDir: 'col', barGrouping: 'clustered',
   chartColors: [THEME.colors.accent5, THEME.colors.accent1],
   showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  dataLabelFormatCode: '0.00',
   showLegend: true, legendPos: 'b', legendColor: '44525F', legendFontSize: 11,
   legendFontFace: '+mn-lt',
   showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '44525F',

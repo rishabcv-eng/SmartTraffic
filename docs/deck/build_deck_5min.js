@@ -47,7 +47,7 @@ pres.defineSlideMaster({
   background: { color: THEME.colors.dk1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 2.0, w: W - 2 * M, h: 1.4,
-      fontSize: 46, bold: true, color: C.background1 }, text: '' } },
+      fontSize: 46, bold: true, color: C.background1, align: 'left' }, text: '' } },
     { placeholder: { options: { name: 'body', type: 'body', x: M, y: 3.5, w: W - 2 * M, h: 1.0,
       fontSize: 18, color: THEME.colors.accent5 }, text: '' } },
   ],
@@ -58,7 +58,7 @@ pres.defineSlideMaster({
   background: { color: C.background1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
-      fontSize: 36, bold: true, color: C.text1 }, text: '' } },
+      fontSize: 36, bold: true, color: C.text1, align: 'left' }, text: '' } },
     { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 6, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
@@ -71,7 +71,7 @@ pres.defineSlideMaster({
   background: { color: THEME.colors.dk1 },
   objects: [
     { placeholder: { options: { name: 'title', type: 'title', x: M, y: 0.5, w: W - 2 * M, h: 0.95,
-      fontSize: 36, bold: true, color: C.background1 }, text: '' } },
+      fontSize: 36, bold: true, color: C.background1, align: 'left' }, text: '' } },
     { text: { text: 'SmartTraffic · Design of Smart Cities', options: { x: M, y: 6.85, w: 6, h: 0.3,
       fontSize: 10, color: THEME.colors.accent5, isTextBox: true, margin: 0 } } },
   ],
@@ -109,6 +109,7 @@ const chartBase = {
   catAxisLabelFontSize: 11, valAxisLabelFontSize: 11,
   catAxisLabelFontFace: '+mn-lt', valAxisLabelFontFace: '+mn-lt',
   dataLabelFontFace: '+mn-lt', dataLabelFontSize: 11,
+  valAxisMinVal: 0,
   catGridLine: { style: 'none' }, valGridLine: { color: 'DCE4EB', size: 1 },
 }
 
@@ -176,6 +177,7 @@ s.addChart(pres.ChartType.bar, [
   barDir: 'col', barGrouping: 'clustered',
   chartColors: [THEME.colors.accent5, THEME.colors.accent1],
   showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  dataLabelFormatCode: '0.00',
   showLegend: true, legendPos: 'b', legendColor: '44525F', legendFontSize: 11,
   legendFontFace: '+mn-lt',
   showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '44525F',
@@ -192,7 +194,7 @@ s.addText(
   'cross street.\n\n' +
   'Our model reproduces the textbook figure for cars exactly, so it departs from ' +
   'convention only where lane discipline does.',
-  { x: M + 7.9, y: 3.5, w: 3.7, h: 2.2, fontSize: 13, color: C.text2,
+  { x: M + 7.9, y: 3.25, w: 3.7, h: 2.4, fontSize: 13, color: C.text2,
     isTextBox: true, margin: 0 })
 
 s.addNotes(
@@ -212,7 +214,7 @@ s.addText(
   'badly on the very thing being maximised.\n\n' +
   'It starved that road: 184 ticks of waiting — minutes — falling on the riders least ' +
   'able to absorb it.',
-  { x: M + 0.35, y: 2.75, w: 5.0, h: 3.0, fontSize: 14, color: C.background1,
+  { x: M + 0.35, y: 2.45, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
 card(s, M + 6.2, 1.65, 5.7, 4.3, '13301F', 'fix card')
@@ -223,7 +225,7 @@ s.addText(
   'road by people moved per second of green, with a fairness term on accumulated ' +
   'red time.\n\n' +
   'Worst-case waiting fell from 184 ticks to 37 — a five-fold cut.',
-  { x: M + 6.55, y: 2.75, w: 5.0, h: 3.0, fontSize: 14, color: C.background1,
+  { x: M + 6.55, y: 2.45, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
 s.addNotes(
