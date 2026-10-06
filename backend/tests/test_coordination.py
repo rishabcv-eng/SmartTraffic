@@ -69,9 +69,7 @@ def test_a_full_downstream_link_blocks_the_upstream_movement():
     # J1-west discharges into J2-west. Fill the receiving link completely.
     from collections import deque
     from app.simulation.mock_engine import Vehicle
-    engine.lanes[('J2', 'west')] = deque(
-        Vehicle(arrival_tick=0) for _ in range(LINK_STORAGE)
-    )
+    engine.set_queue('J2', 'west', [Vehicle(arrival_tick=0) for _ in range(LINK_STORAGE)])
     held = len(engine.lanes[('J1', 'west')])
 
     engine.step({'J1': 'EW', 'J2': 'PED', 'J3': 'PED', 'J4': 'PED'})

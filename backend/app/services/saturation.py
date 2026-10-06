@@ -65,6 +65,17 @@ class VehicleClass:
     #: Queue storage consumed, in car-lengths.
     storage: float
 
+    @property
+    def storage_ci(self) -> int:
+        """Storage in hundredths of a car-length, as an exact integer.
+
+        Storage is compared against a hard capacity limit, and 0.35 and 0.55 are
+        not representable in binary. Accumulating them as floats makes whether a
+        vehicle fits depend on the order the queue was built in. Integers remove
+        that entirely.
+        """
+        return int(round(self.storage * 100))
+
 
 #: Defaults are centre estimates for an Indian urban arterial.
 VEHICLE_CLASSES: dict[str, VehicleClass] = {

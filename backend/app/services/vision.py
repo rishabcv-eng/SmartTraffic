@@ -224,7 +224,7 @@ def seed_engine(engine, junction_id: str, estimate: dict, force: bool = False) -
         buses = min(count, int(lane.get('buses', 0)))
         vehicles = [Vehicle(arrival_tick=engine.tick, kind='bus') for _ in range(buses)]
         vehicles += [Vehicle(arrival_tick=engine.tick, kind='car') for _ in range(count - buses)]
-        engine.lanes[(junction_id, direction)] = deque(vehicles)
+        engine.set_queue(junction_id, direction, vehicles)
         applied[direction] = count
 
     return {

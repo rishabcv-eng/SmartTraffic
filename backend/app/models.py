@@ -117,7 +117,19 @@ class NetworkSnapshot:
     faults: list[dict] = field(default_factory=list)
     emergency: dict | None = None
     decisions: list[dict] = field(default_factory=list)
-    metrics: dict = field(default_factory=dict)
+    #: Either a dict, or a callable returning one. Delay statistics cost more
+    #: to compute than the entire rest of a tick, and a controller reads the
+    #: queues on every tick while reading the statistics on none of them, so
+    #: they are produced on demand rather than eagerly.
+    metrics_source: object = None
+    _metrics_cache: dict | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def metrics(self) -> dict:
+        if self._metrics_cache is None:
+            source = self.metrics_source
+            self._metrics_cache = source() if callable(source) else (source or {})
+        return self._metrics_cache
 
     def to_dict(self) -> dict:
         total_queue = sum(j.queue for j in self.junctions)

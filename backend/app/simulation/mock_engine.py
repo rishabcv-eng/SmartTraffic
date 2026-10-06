@@ -52,6 +52,11 @@ LINK_TRAVEL_TICKS = 4
 #: 40 vehicles is roughly a 200 m two-lane approach at jam density.
 LINK_STORAGE = 40
 
+#: The same limit in hundredths of a car-length. Occupancy is tracked in these
+#: exact integer units so that whether a vehicle fits never depends on
+#: floating-point accumulation order.
+LINK_STORAGE_CI = LINK_STORAGE * 100
+
 
 @dataclass
 class Vehicle:
@@ -72,6 +77,12 @@ class Vehicle:
         """Queue room consumed, in car-lengths. Two-wheelers pack far tighter."""
         cls = VEHICLE_CLASSES.get(self.kind)
         return cls.storage if cls else 1.0
+
+    @property
+    def storage_ci(self) -> int:
+        """The same, in exact hundredths of a car-length."""
+        cls = VEHICLE_CLASSES.get(self.kind)
+        return cls.storage_ci if cls else 100
 
 
 @dataclass
@@ -210,6 +221,10 @@ class MockTrafficEngine(TrafficEngine):
                     for _ in range(initial)
                 )
 
+        self._storage = {
+            key: sum(v.storage_ci for v in lane) for key, lane in self.lanes.items()
+        }
+
         self.pedestrians: dict[str, deque] = {jid: deque() for jid in self.JUNCTION_IDS}
         self.ped_last_served: dict[str, int] = {jid: 0 for jid in self.JUNCTION_IDS}
         self.phases: dict[str, Phase] = {jid: 'NS' for jid in self.JUNCTION_IDS}
@@ -225,6 +240,16 @@ class MockTrafficEngine(TrafficEngine):
         self.approach_max_wait: dict[tuple[str, str], int] = {key: 0 for key in self.lanes}
         self.served_vehicles = 0
         self.served_people = 0.0
+        # Running totals, so a mean is a division rather than a walk over every
+        # vehicle ever served. The lists are kept only for percentiles, which
+        # genuinely need the distribution.
+        self._veh_wait_sum = 0
+        self._person_wait_sum = 0.0
+        self._person_weight = 0.0
+        self._bus_wait_sum = 0
+        self._ped_wait_sum = 0
+        # Storage consumed per approach is maintained incrementally; it is
+        # seeded from the standing queues above, where the lanes are built.
         self.bus_waits: list[int] = []
         self.blocked_arrivals = 0
         self.spillback_blocked = 0
@@ -381,12 +406,15 @@ class MockTrafficEngine(TrafficEngine):
                     # is merely "not yet full" lets a bus squeeze past the cap,
                     # and a two-wheeler that would have fitted gets refused
                     # while a car that would not does get in.
-                    if self._occupied((jid, direction)) + arrival.storage > LINK_STORAGE:
+                    if (self._storage.get((jid, direction), 0)
+                            + arrival.storage_ci) > LINK_STORAGE_CI:
                         # The demand does not vanish -- it queues back
                         # off-network, so it is counted rather than dropped.
                         self.blocked_arrivals += 1
                         continue
                     lane.append(arrival)
+                    self._storage[(jid, direction)] = (
+                        self._storage.get((jid, direction), 0) + arrival.storage_ci)
 
         for jid in self.JUNCTION_IDS:
             for _ in range(int(round(self.rng.randint(0, 2) * self.pedestrian_rate))):
@@ -426,6 +454,8 @@ class MockTrafficEngine(TrafficEngine):
 
         for jid, direction, vehicle in transfers:
             self.lanes[(jid, direction)].append(vehicle)
+            self._storage[(jid, direction)] = (
+                self._storage.get((jid, direction), 0) + vehicle.storage_ci)
 
         self._advance_emergency()
 
@@ -445,11 +475,25 @@ class MockTrafficEngine(TrafficEngine):
 
         return self.snapshot()
 
+    def set_queue(self, junction: str, direction: str, vehicles) -> None:
+        """Replace an approach queue, keeping the storage index consistent.
+
+        Occupancy is maintained incrementally, so assigning to lanes
+        directly leaves the engine believing the old queue is still there.
+        Anything that replaces a queue wholesale -- vision seeding, test setup --
+        goes through here.
+        """
+        from collections import deque as _deque
+
+        queue = _deque(vehicles)
+        self.lanes[(junction, direction)] = queue
+        self._storage[(junction, direction)] = sum(v.storage_ci for v in queue)
+
     def _occupied(self, key: tuple[str, str]) -> float:
         """Storage consumed by a queue, in car-lengths rather than vehicles."""
-        return sum(v.storage for v in self.lanes[key])
+        return self._storage.get(key, 0) / 100.0
 
-    def _downstream_space(self, jid: str, direction: str) -> float:
+    def _downstream_space(self, jid: str, direction: str) -> int:
         """Room left on the link this movement discharges into, in car-lengths.
 
         Movements that leave the network are never blocked. Everything else is
@@ -463,8 +507,9 @@ class MockTrafficEngine(TrafficEngine):
         """
         target = self.STRAIGHT_TRANSFERS.get((jid, direction))
         if target is None:
-            return float(LINK_STORAGE)
-        return LINK_STORAGE - self._occupied(target) - self._committed.get(target, 0.0)
+            return LINK_STORAGE_CI
+        return (LINK_STORAGE_CI - self._storage.get(target, 0)
+                - self._committed.get(target, 0))
 
     def _discharge(self, jid: str, direction: str) -> list[Vehicle]:
         """Release vehicles from one approach within this tick's green capacity."""
@@ -474,7 +519,7 @@ class MockTrafficEngine(TrafficEngine):
         released: list[Vehicle] = []
         while lane and budget > 0:
             head = lane[0]
-            if self._downstream_space(jid, direction) < head.storage:
+            if self._downstream_space(jid, direction) < head.storage_ci:
                 # Spillback: the receiving link cannot fit this vehicle, so the
                 # movement is physically blocked whatever the signal says.
                 self.spillback_blocked += 1
@@ -487,14 +532,20 @@ class MockTrafficEngine(TrafficEngine):
             if cost > budget:
                 break
             lane.popleft()
+            self._storage[(jid, direction)] = max(
+                0, self._storage.get((jid, direction), 0) - head.storage_ci)
             if target is not None:
-                self._committed[target] = self._committed.get(target, 0.0) + head.storage
+                self._committed[target] = self._committed.get(target, 0) + head.storage_ci
             budget -= cost
             wait = self.tick - head.arrival_tick
             self.vehicle_waits.append(wait)
             self.person_waits.append((wait, head.occupancy))
+            self._veh_wait_sum += wait
+            self._person_wait_sum += wait * head.occupancy
+            self._person_weight += head.occupancy
             if head.kind == 'bus':
                 self.bus_waits.append(wait)
+                self._bus_wait_sum += wait
             self.served_vehicles += 1
             self.served_people += head.occupancy
             released.append(head)
@@ -505,6 +556,7 @@ class MockTrafficEngine(TrafficEngine):
         while crossing:
             arrived = crossing.popleft()
             self.pedestrian_waits.append(self.tick - arrived)
+            self._ped_wait_sum += self.tick - arrived
         self.ped_last_served[jid] = self.tick
 
     def _advance_emergency(self) -> None:
@@ -575,7 +627,7 @@ class MockTrafficEngine(TrafficEngine):
             weather=self.weather,
             faults=list(self.faults.values()),
             emergency=self.emergency_run.to_dict() if self.emergency_run else None,
-            metrics=self.wait_metrics(),
+            metrics_source=self.wait_metrics,
         )
 
     # ----------------------------------------------------------------- metrics
@@ -598,25 +650,24 @@ class MockTrafficEngine(TrafficEngine):
         """
         waits = self.vehicle_waits
         person_delay = (
-            sum(w * o for w, o in self.person_waits) / max(1e-9, sum(o for _, o in self.person_waits))
-            if self.person_waits else 0.0
+            self._person_wait_sum / self._person_weight if self._person_weight else 0.0
         )
         worst_key = max(self.approach_max_wait, key=self.approach_max_wait.get, default=None)
         return {
             'served_vehicles': self.served_vehicles,
             'served_people': round(self.served_people, 1),
             # Totals feed the fuel / CO2 / rupee conversion in services.impact.
-            'total_vehicle_wait_ticks': sum(waits),
-            'total_bus_wait_ticks': sum(self.bus_waits),
-            'total_person_wait_ticks': round(sum(w * o for w, o in self.person_waits), 1),
-            'total_pedestrian_wait_ticks': sum(self.pedestrian_waits),
-            'mean_vehicle_delay': round(mean(waits), 2) if waits else 0.0,
+            'total_vehicle_wait_ticks': self._veh_wait_sum,
+            'total_bus_wait_ticks': self._bus_wait_sum,
+            'total_person_wait_ticks': round(self._person_wait_sum, 1),
+            'total_pedestrian_wait_ticks': self._ped_wait_sum,
+            'mean_vehicle_delay': round(self._veh_wait_sum / len(waits), 2) if waits else 0.0,
             'p50_vehicle_delay': self._percentile(waits, 50),
             'p95_vehicle_delay': self._percentile(waits, 95),
             'max_vehicle_delay': float(max(waits)) if waits else 0.0,
             'mean_person_delay': round(person_delay, 2),
-            'mean_bus_delay': round(mean(self.bus_waits), 2) if self.bus_waits else 0.0,
-            'mean_pedestrian_delay': round(mean(self.pedestrian_waits), 2) if self.pedestrian_waits else 0.0,
+            'mean_bus_delay': round(self._bus_wait_sum / len(self.bus_waits), 2) if self.bus_waits else 0.0,
+            'mean_pedestrian_delay': round(self._ped_wait_sum / len(self.pedestrian_waits), 2) if self.pedestrian_waits else 0.0,
             'p95_pedestrian_delay': self._percentile(self.pedestrian_waits, 95),
             'max_pedestrian_delay': float(max(self.pedestrian_waits)) if self.pedestrian_waits else 0.0,
             'pedestrians_served': len(self.pedestrian_waits),

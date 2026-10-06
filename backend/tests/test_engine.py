@@ -1,4 +1,4 @@
-from app.simulation.mock_engine import WEATHER_CAPACITY, MockTrafficEngine
+from app.simulation.mock_engine import WEATHER_CAPACITY, MockTrafficEngine, Vehicle
 
 
 def drive(engine, steps=40, phase='NS'):
@@ -152,3 +152,45 @@ def test_emergency_vehicle_waits_at_a_hostile_red():
     assert engine.emergency_run.waiting_at_red if hasattr(engine.emergency_run, 'waiting_at_red') else engine.emergency_run.waiting
     assert engine.emergency_run.delay_ticks >= 9
     assert engine.emergency_run.finish_tick is None
+
+
+def test_storage_index_never_drifts_from_the_queues():
+    """Occupancy is maintained incrementally, so it can silently go stale.
+
+    It is compared against a hard capacity limit, so drift does not raise — it
+    quietly admits traffic that should have been turned away. This pins the
+    invariant rather than trusting it.
+    """
+    from app.controllers.registry import build
+
+    engine = MockTrafficEngine()
+    engine.reset(scenario='rush', seed=3)
+    controller = build('coordinated-pressure-v1', shielded=True)
+
+    for _ in range(150):
+        engine.step(controller.choose_phases(engine.snapshot()))
+        for key, lane in engine.lanes.items():
+            assert engine._storage[key] == sum(v.storage_ci for v in lane), key
+
+
+def test_replacing_a_queue_keeps_the_index_consistent():
+    engine = MockTrafficEngine()
+    engine.reset(seed=7)
+    engine.set_queue('J2', 'west', [Vehicle(arrival_tick=0, kind='two-wheeler')] * 30)
+
+    assert engine._storage[('J2', 'west')] == 30 * Vehicle(0, 'two-wheeler').storage_ci
+    assert len(engine.lanes[('J2', 'west')]) == 30
+
+
+def test_storage_is_compared_in_exact_units():
+    """Capacity is an integer comparison, not a float one.
+
+    0.35 and 0.55 car-lengths are not representable in binary, so accumulating
+    them as floats made whether a vehicle fits depend on the order the queue was
+    built in. These must be exact.
+    """
+    assert Vehicle(0, 'two-wheeler').storage_ci == 35
+    assert Vehicle(0, 'car').storage_ci == 100
+    assert Vehicle(0, 'bus').storage_ci == 260
+    assert all(isinstance(Vehicle(0, k).storage_ci, int)
+               for k in ('two-wheeler', 'auto', 'car', 'bus'))
