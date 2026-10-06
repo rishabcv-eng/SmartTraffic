@@ -41,7 +41,7 @@ const THEME = {
 const pres = new pptxgen()
 pres.layout = 'LAYOUT_WIDE'           // 13.3 x 7.5
 pres.theme = { headFontFace: THEME.headFontFace, bodyFontFace: THEME.bodyFontFace }
-pres.author = 'Rishab CV'
+pres.author = 'Rishab CV, Martin Wills'
 pres.company = 'SmartTraffic'
 pres.title = 'SmartTraffic — adaptive signal control for lane-less traffic'
 
@@ -165,6 +165,15 @@ s.addText([
   { text: 'SIH PS90   ·   15 controllers   ·   119 tests   ·   every claim reproducible',
     options: { fontSize: 13, color: THEME.colors.accent1 } },
 ], { placeholder: 'body' })
+card(s, M, 5.75, 6.6, 1.15, THEME.colors.dk2, 'team card')
+s.addText([
+  { text: 'Rishab CV', options: { bold: true, color: 'FFFFFF' } },
+  { text: '   24BCE5296', options: { color: THEME.colors.accent1 } },
+], { x: M + 0.35, y: 5.9, w: 6.0, h: 0.4, fontSize: 15, isTextBox: true, margin: 0 })
+s.addText([
+  { text: 'Martin Wills', options: { bold: true, color: 'FFFFFF' } },
+  { text: '   24BCE5255', options: { color: THEME.colors.accent1 } },
+], { x: M + 0.35, y: 6.33, w: 6.0, h: 0.4, fontSize: 15, isTextBox: true, margin: 0 })
 signalHead(s, W - 2.2, 2.3, 2, 1.6)
 s.addNotes(
   'One line: we built an adaptive traffic signal controller, and the part that is ' +
