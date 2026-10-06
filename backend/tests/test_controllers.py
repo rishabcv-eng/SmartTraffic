@@ -1,27 +1,23 @@
-from app.controllers.actuated import ActuatedController
-from app.controllers.fixed_time import FixedTimeController
-from app.controllers.max_pressure import MaxPressureController
-from app.controllers.mpc_lite import MPCLiteController
-from app.controllers.network_max_pressure import NetworkMaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
+from app.controllers.registry import CONTROLLERS, build, describe
 from app.simulation.mock_engine import MockTrafficEngine
 
 
 def test_controllers_emit_all_junction_actions():
     engine = MockTrafficEngine()
     snap = engine.reset(seed=3)
-    controllers = (
-        FixedTimeController(),
-        ActuatedController(),
-        MaxPressureController(),
-        NetworkMaxPressureController(),
-        PredictivePressureController(),
-        MPCLiteController(),
-    )
-    for controller in controllers:
-        actions = controller.choose_phases(snap)
-        assert set(actions) == {'J1', 'J2', 'J3', 'J4'}
-        assert set(actions.values()) <= {'NS', 'EW'}
+    for name in CONTROLLERS:
+        actions = build(name).choose_phases(snap)
+        assert set(actions) == {'J1', 'J2', 'J3', 'J4'}, name
+        # Only the safety shield may introduce a pedestrian phase.
+        assert set(actions.values()) <= {'NS', 'EW', 'PED'}, name
+
+
+def test_registry_describes_every_controller():
+    detail = describe()
+    assert len(detail) == len(CONTROLLERS)
+    assert all(row['summary'] for row in detail)
+    assert any(row['shield_required'] for row in detail)
 
 
 def test_simulation_is_deterministic():

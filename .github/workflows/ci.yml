@@ -2,7 +2,6 @@ name: SmartTraffic CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -45,3 +44,22 @@ jobs:
           pip install -r requirements.txt
       - name: Run tests
         run: pytest -q
+
+  reproduce-claims:
+    name: Documented claims still hold
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      # Fails the build if any number quoted in the README or docs no longer
+      # reproduces, so the documentation cannot silently drift into fiction.
+      - name: Reproduce documented results
+        run: python scripts/reproduce_results.py --quick

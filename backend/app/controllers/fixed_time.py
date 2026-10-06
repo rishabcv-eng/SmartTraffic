@@ -3,6 +3,14 @@ from app.models import NetworkSnapshot, Phase
 
 
 class FixedTimeController(Controller):
+    """Conventional fixed-clock signal: equal green windows regardless of demand.
+
+    This is the baseline almost every Indian junction runs today, and the
+    reference every other controller here is measured against. It also doubles
+    as the fallback plan the safety shield reverts to when detection or
+    communication fails.
+    """
+
     name = 'fixed-time'
 
     def __init__(self, cycle: int = 8):

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import OpsConsole from './OpsConsole.jsx'
 import { createRoot } from 'react-dom/client'
 import * as THREE from 'three'
 import './styles.css'
@@ -91,6 +92,68 @@ const PROFILES = {
 const EV_START_DIST = 110      // distance units behind the stop line at dispatch
 const EV_SPEED = 7.5           // units per tick
 
+/* Headline findings, stated before the visitor has to scroll six thousand
+   pixels to discover them. The two-wheeler figure is fetched live so the page
+   cannot quote a number the code no longer produces; the rest link through to
+   the tab that re-runs them on demand. */
+function ResultStrip() {
+  const [pcu, setPcu] = React.useState(null)
+
+  React.useEffect(() => {
+    fetch(`${API}/api/saturation/report`)
+      .then(r => r.json())
+      .then(d => setPcu(d.classes?.find(c => c.class === 'two-wheeler')))
+      .catch(() => {})
+  }, [])
+
+  const jump = () => {
+    document.querySelector('.ops')?.scrollIntoView({ behavior: 'smooth' })
+    setTimeout(() => {
+      const tab = [...document.querySelectorAll('.ops-tabs button')]
+        .find(b => b.textContent.includes('Mixed fleet'))
+      tab?.click()
+    }, 600)
+  }
+
+  return (
+    <section className="findings">
+      <div className="findings-head">
+        <h2>What we found</h2>
+        <button className="findings-jump" onClick={jump}>Run it yourself →</button>
+      </div>
+      <div className="findings-grid">
+        <article className="finding">
+          <strong>{pcu ? `${pcu.overstatement_pct}%` : '56%'}</strong>
+          <h3>The standard factor is wrong for Indian traffic</h3>
+          <p>
+            Signal theory assumes vehicles queue in lanes. Two-wheelers cross two or three
+            abreast where one car fits, so the conventional PCU over-states how much green
+            they need{pcu ? ` — ${pcu.static_pcu} against a real ${pcu.implied_pcu}` : ''}.
+          </p>
+        </article>
+        <article className="finding accent">
+          <strong>+1,911</strong>
+          <h3>More people moved per run</h3>
+          <p>
+            Measuring pressure in people per second of green, against what a deployed Indian
+            system does today — on a scooter feeder meeting a bus arterial at saturation.
+            Worst-case waiting fell from 184 ticks to 37.
+          </p>
+        </article>
+        <article className="finding">
+          <strong>10/10</strong>
+          <h3>Claims that re-run on demand</h3>
+          <p>
+            <code>scripts/reproduce_results.py</code> re-measures every number in our
+            documentation and fails the build if one stops being true — including the
+            results that went against us.
+          </p>
+        </article>
+      </div>
+    </section>
+  )
+}
+
 function Metric({ label, value, hint }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div>
 }
@@ -112,6 +175,284 @@ function SignalHead({ phase, axis }) {
   </div>
 }
 
+/* ------------------------------------------------------------------ */
+/* Scene dressing helpers.                                             */
+/* A junction reads as a place, not a diagram, when it has depth cues: */
+/* lit windows, street lighting, kerbs and people. These build the     */
+/* textures and sprites for that once, then everything reuses them.    */
+/* ------------------------------------------------------------------ */
+
+/* Surface noise. Flat untextured asphalt is the single biggest reason a
+   3D scene reads as a diagram: real surfaces are never one uniform colour.
+   Cheap canvas noise breaks that up and gives the light something to catch. */
+const _noiseCache = {}
+function noiseTexture(baseHex, spread, repeat){
+  const key = `${baseHex}-${spread}-${repeat}`
+  if(_noiseCache[key]) return _noiseCache[key]
+  const S = 128
+  const c = document.createElement('canvas'); c.width = c.height = S
+  const g = c.getContext('2d')
+  const base = new THREE.Color(baseHex)
+  g.fillStyle = `#${base.getHexString()}`; g.fillRect(0,0,S,S)
+  for(let i=0;i<5200;i++){
+    const l = (Math.random()-.5) * spread
+    const col = base.clone().offsetHSL(0,0,l)
+    g.fillStyle = `#${col.getHexString()}`
+    g.fillRect(Math.random()*S, Math.random()*S, 1+Math.random()*2.4, 1+Math.random()*2.4)
+  }
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(repeat, repeat)
+  _noiseCache[key] = t
+  return t
+}
+
+/* Dusk sky. A flat background colour is the last thing that gives a 3D scene
+   away as a render; a real horizon is brighter than the zenith, and the fog
+   colour needs something to blend into. */
+let _skyTex = null
+function skyTexture(){
+  if(_skyTex) return _skyTex
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0,0,0,256)
+  grad.addColorStop(0,   '#0b1119')   // zenith
+  grad.addColorStop(0.55,'#17222e')
+  grad.addColorStop(0.82,'#2c3542')
+  grad.addColorStop(1,   '#4a4038')   // warm haze at the horizon
+  g.fillStyle = grad; g.fillRect(0,0,8,256)
+  _skyTex = new THREE.CanvasTexture(c)
+  _skyTex.colorSpace = THREE.SRGBColorSpace
+  return _skyTex
+}
+
+/* Soft radial glow. Used for signal bulbs and lamp spill — far cheaper
+   than a post-processing bloom pass and works on weak GPUs. */
+let _glowTex = null
+function glowTexture(){
+  if(_glowTex) return _glowTex
+  const c = document.createElement('canvas'); c.width = c.height = 64
+  const g = c.getContext('2d')
+  const grad = g.createRadialGradient(32,32,0,32,32,32)
+  grad.addColorStop(0,'rgba(255,255,255,1)')
+  grad.addColorStop(.35,'rgba(255,255,255,.55)')
+  grad.addColorStop(1,'rgba(255,255,255,0)')
+  g.fillStyle = grad; g.fillRect(0,0,64,64)
+  _glowTex = new THREE.CanvasTexture(c)
+  return _glowTex
+}
+
+function makeGlow(color, scale){
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture(), color, transparent:true, opacity:0,
+    blending: THREE.AdditiveBlending, depthWrite:false,
+  }))
+  s.scale.set(scale,scale,1)
+  return s
+}
+
+/* Facade texture with a window grid. Returns a colour map plus a matching
+   emissive map so only the lit windows glow after dark. */
+function makeFacade(baseHex, litHex, seed){
+  const W = 64, H = 128, cols = 6, rows = 12
+  const mk = () => { const c = document.createElement('canvas'); c.width=W; c.height=H; return c }
+  const cMap = mk(), eMap = mk()
+  const cg = cMap.getContext('2d'), eg = eMap.getContext('2d')
+  const base = new THREE.Color(baseHex), lit = new THREE.Color(litHex)
+
+  cg.fillStyle = `#${base.getHexString()}`; cg.fillRect(0,0,W,H)
+  eg.fillStyle = '#000000'; eg.fillRect(0,0,W,H)
+
+  /* Deterministic per-building so a facade does not reshuffle every frame. */
+  let n = seed * 9301 + 49297
+  const rnd = () => { n = (n * 9301 + 49297) % 233280; return n / 233280 }
+
+  const pw = W/cols*.56, ph = H/rows*.42
+  for(let r=0;r<rows;r++){
+    for(let col=0;col<cols;col++){
+      const x = (col + .5) * (W/cols) - pw/2
+      const y = (r + .5) * (H/rows) - ph/2
+      const on = rnd() > .42
+      cg.fillStyle = on ? `#${lit.getHexString()}` : `#${base.clone().offsetHSL(0,0,-.06).getHexString()}`
+      cg.fillRect(x,y,pw,ph)
+      if(on){
+        eg.fillStyle = `#${lit.getHexString()}`
+        eg.fillRect(x,y,pw,ph)
+      }
+    }
+  }
+  const t1 = new THREE.CanvasTexture(cMap), t2 = new THREE.CanvasTexture(eMap)
+  return { map:t1, emissiveMap:t2 }
+}
+
+/* Crosswalks. A pedestrian may only cross an arm while the traffic on that
+   arm is stopped, so the people on screen are a readable signal of what the
+   controller is doing rather than decoration. */
+const CROSSWALKS = [
+  { id:'n', axis:'x', fixed:-15, from:-12, to:12, safeOn:'EW' },
+  { id:'s', axis:'x', fixed: 15, from:-12, to:12, safeOn:'EW' },
+  { id:'w', axis:'z', fixed:-15, from:-12, to:12, safeOn:'NS' },
+  { id:'e', axis:'z', fixed: 15, from:-12, to:12, safeOn:'NS' },
+]
+
+const SHIRTS = [0xe06c5a,0x4f9dd6,0xe8b64c,0x6fbf8a,0xb98fd1,0xe0e3e6,0xd97fa8,0x5fc7c2]
+
+function makePerson(i){
+  const g = new THREE.Group()
+  const shirt = SHIRTS[i % SHIRTS.length]
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(.34,.62,.26),
+    new THREE.MeshStandardMaterial({ color:0x2f3a45, roughness:.9 }))
+  legs.position.y = .31
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.42,.62,.3),
+    new THREE.MeshStandardMaterial({ color:shirt, roughness:.85 }))
+  torso.position.y = .93
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.17,12,12),
+    new THREE.MeshStandardMaterial({ color:0x9a6b4f, roughness:.8 }))
+  head.position.y = 1.36
+  ;[legs,torso,head].forEach(m=>{ m.castShadow = true })
+  g.add(legs,torso,head)
+  g.userData = { legs, torso, phase: Math.random()*Math.PI*2 }
+  return g
+}
+
+/* ------------------------------------------------------------------ */
+/* Vehicle model kit.                                                  */
+/* Four classes share a road here and the whole PCU argument depends   */
+/* on telling them apart at a glance, so each gets its own silhouette  */
+/* and its own palette rather than a tinted box:                       */
+/*   two-wheeler  small, dark, visible rider                           */
+/*   auto         three wheels, yellow body, black canopy              */
+/*   car          low, four wheels, glasshouse, mixed colours          */
+/*   bus          tall and long, window band, six wheels               */
+/* Geometry and materials are built once and shared by every instance; */
+/* with ~400 pooled vehicles per scene, per-instance materials would   */
+/* dominate both memory and draw-call setup.                           */
+/* ------------------------------------------------------------------ */
+const BODY_TONES = {
+  bike: [0x2d3742, 0x6b2f33, 0x27424a],
+  auto: [0xe3b505, 0xd9a904, 0xeabf20],
+  car:  [0xdfe3e6, 0x39506b, 0x8d3f3f, 0x4a5560, 0xb9bec2],
+  bus:  [0x2f6fb5, 0xd06a2a, 0x3f7d5a],
+}
+
+let _vkit = null
+function vehicleKit(){
+  if(_vkit) return _vkit
+  const M = (o) => new THREE.MeshStandardMaterial(o)
+  const wheel = new THREE.CylinderGeometry(.34,.34,.26,14)
+  wheel.rotateZ(Math.PI/2)
+  const wheelSm = new THREE.CylinderGeometry(.3,.3,.18,12)
+  wheelSm.rotateZ(Math.PI/2)
+
+  _vkit = {
+    geo: { wheel, wheelSm, box: new THREE.BoxGeometry(1,1,1) },
+    mat: {
+      tyre:  M({ color:0x15181b, roughness:.95 }),
+      glass: M({ color:0x1d2c38, roughness:.18, metalness:.55 }),
+      trim:  M({ color:0x20262b, roughness:.8 }),
+      canopy:M({ color:0x14181c, roughness:.85 }),
+      head:  M({ color:0xfff6e0, emissive:0xffe8b8, emissiveIntensity:1.5, roughness:.4 }),
+      tail:  M({ color:0x5a1414, emissive:0xff2a2a, emissiveIntensity:1.2, roughness:.5 }),
+      rider: M({ color:0x394654, roughness:.9 }),
+      helmet:M({ color:0xd8dde1, roughness:.5 }),
+      body: Object.fromEntries(Object.entries(BODY_TONES).map(([k, tones]) =>
+        [k, tones.map(c => M({ color:c, roughness:.55, metalness:.15 }))])),
+    },
+  }
+  return _vkit
+}
+
+/* Box helper on the shared unit cube, so nothing allocates new geometry. */
+function part(kit, mat, w, h, d, x, y, z, shadow){
+  const m = new THREE.Mesh(kit.geo.box, mat)
+  m.scale.set(w,h,d); m.position.set(x,y,z)
+  if(shadow) m.castShadow = true
+  return m
+}
+
+function buildVehicle(kind, variantIdx){
+  const kit = vehicleKit()
+  const v = VEHICLES[kind]
+  const g = new THREE.Group()
+  const tones = kit.mat.body[kind]
+  const body = tones[variantIdx % tones.length]
+  const addWheel = (geo, x, y, z) => {
+    const w = new THREE.Mesh(geo, kit.mat.tyre)
+    w.position.set(x,y,z); g.add(w)
+  }
+
+  if(kind === 'bike'){
+    addWheel(kit.geo.wheelSm, 0, .3, -v.d*.34)
+    addWheel(kit.geo.wheelSm, 0, .3,  v.d*.34)
+    g.add(part(kit, body, v.w*.5, .34, v.d*.55, 0, .62, 0, true))
+    g.add(part(kit, kit.mat.trim, v.w*.95, .1, .5, 0, .92, -v.d*.3, false))   // handlebar
+    g.add(part(kit, kit.mat.rider, .46, .72, .38, 0, 1.12, v.d*.06, true))    // rider
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(.19,10,10), kit.mat.helmet)
+    helmet.position.set(0,1.6,v.d*.04); helmet.castShadow = true; g.add(helmet)
+    g.add(part(kit, kit.mat.head, .16, .12, .1, 0, .78, -v.d*.46, false))
+  }
+
+  else if(kind === 'auto'){
+    addWheel(kit.geo.wheelSm, 0, .3, -v.d*.36)                                // single front
+    addWheel(kit.geo.wheelSm, -v.w*.42, .3, v.d*.3)
+    addWheel(kit.geo.wheelSm,  v.w*.42, .3, v.d*.3)
+    g.add(part(kit, body, v.w, .78, v.d*.9, 0, .74, 0, true))                 // yellow tub
+    g.add(part(kit, kit.mat.canopy, v.w*1.02, .5, v.d*.78, 0, 1.4, .12, true))// black canopy
+    g.add(part(kit, kit.mat.glass, v.w*.8, .42, .1, 0, 1.26, -v.d*.44, false))// windscreen
+    g.add(part(kit, kit.mat.canopy, .1, .62, .1, -v.w*.46, 1.35, -v.d*.34, false))
+    g.add(part(kit, kit.mat.canopy, .1, .62, .1,  v.w*.46, 1.35, -v.d*.34, false))
+    g.add(part(kit, kit.mat.head, .18, .14, .08, 0, .82, -v.d*.47, false))
+    g.add(part(kit, kit.mat.tail, .5, .12, .08, 0, .9, v.d*.46, false))
+  }
+
+  else if(kind === 'car'){
+    const y = .38
+    addWheel(kit.geo.wheel, -v.w*.44, .34, -v.d*.31)
+    addWheel(kit.geo.wheel,  v.w*.44, .34, -v.d*.31)
+    addWheel(kit.geo.wheel, -v.w*.44, .34,  v.d*.31)
+    addWheel(kit.geo.wheel,  v.w*.44, .34,  v.d*.31)
+    g.add(part(kit, body, v.w, .62, v.d, 0, y+.28, 0, true))                  // lower body
+    g.add(part(kit, body, v.w*.9, .46, v.d*.5, 0, y+.78, .18, true))          // cabin
+    g.add(part(kit, kit.mat.glass, v.w*.92, .34, v.d*.46, 0, y+.8, .16, false))
+    g.add(part(kit, kit.mat.head, .34, .14, .08, -v.w*.3, y+.3, -v.d*.5, false))
+    g.add(part(kit, kit.mat.head, .34, .14, .08,  v.w*.3, y+.3, -v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .34, .14, .08, -v.w*.3, y+.34, v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .34, .14, .08,  v.w*.3, y+.34, v.d*.5, false))
+  }
+
+  else { // bus
+    const h = v.h
+    ;[-v.d*.34, v.d*.02, v.d*.36].forEach(z=>{
+      addWheel(kit.geo.wheel, -v.w*.44, .34, z)
+      addWheel(kit.geo.wheel,  v.w*.44, .34, z)
+    })
+    g.add(part(kit, body, v.w, h, v.d, 0, h/2 + .34, 0, true))
+    /* window band all the way down the flank: the clearest bus cue */
+    g.add(part(kit, kit.mat.glass, v.w*1.01, .86, v.d*.9, 0, h*.78, .1, false))
+    g.add(part(kit, kit.mat.glass, v.w*.9, .9, .12, 0, h*.72, -v.d*.5, false))
+    g.add(part(kit, kit.mat.trim, v.w*1.02, .16, v.d*.96, 0, h*.5, 0, false))
+    g.add(part(kit, kit.mat.head, .7, .18, .1, 0, h*.98, -v.d*.49, false))    // route board
+    g.add(part(kit, kit.mat.head, .36, .16, .08, -v.w*.3, .62, -v.d*.5, false))
+    g.add(part(kit, kit.mat.head, .36, .16, .08,  v.w*.3, .62, -v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .36, .16, .08, -v.w*.3, .7, v.d*.5, false))
+    g.add(part(kit, kit.mat.tail, .36, .16, .08,  v.w*.3, .7, v.d*.5, false))
+  }
+
+  /* A pool of light thrown forward onto the road. Nothing sells dusk like
+     vehicles that actually light the surface in front of them. */
+  if(kind !== 'bike'){
+    const beam = new THREE.Mesh(new THREE.PlaneGeometry(v.w*2.6, v.d*1.9),
+      new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xffd9a0, transparent:true,
+        opacity:.16, blending: THREE.AdditiveBlending, depthWrite:false }))
+    beam.rotation.x = -Math.PI/2
+    beam.position.set(0, .06, -v.d*.95)
+    g.add(beam)
+  }
+
+  g.visible = false
+  return g
+}
+
 function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, frames, tick, winning, peers }) {
   const mount = useRef(null)
   const ctx = useRef(null)
@@ -121,96 +462,298 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     if (!host) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x0b1015)
-    scene.fog = new THREE.Fog(0x0b1015, 55, 150)
+    scene.background = new THREE.Color(0x0e141a)
+    scene.fog = new THREE.Fog(0x14202b, 62, 172)
     const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 250)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    /* Filmic tone mapping and a correct output colour space. Without these,
+       three.js renders linear values straight to screen, which is what makes
+       an untouched scene look flat and plasticky. */
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.15
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     host.innerHTML = ''
     host.appendChild(renderer.domElement)
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x27323a, 2.2))
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3)
-    sun.position.set(30, 50, 20)
+    /* Dusk lighting: cool skylight bounced off the ground, one warm key that
+       casts the shadows, and a dim cool fill so shadowed faces keep some
+       shape instead of going flat black. */
+    scene.add(new THREE.HemisphereLight(0x93b4d6, 0x35302c, .85))
+    scene.add(new THREE.AmbientLight(0x4a5a68, .18))
+    const sun = new THREE.DirectionalLight(0xffd9b0, 1.45)
+    sun.position.set(42, 58, 26)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(1024, 1024)
+    sun.shadow.camera.near = 10
+    sun.shadow.camera.far = 190
+    sun.shadow.camera.left = -70; sun.shadow.camera.right = 70
+    sun.shadow.camera.top = 70;   sun.shadow.camera.bottom = -70
+    sun.shadow.bias = -0.0012
+    sun.shadow.normalBias = 0.03
     scene.add(sun)
+    const fill = new THREE.DirectionalLight(0x8fb0d8, .35)
+    fill.position.set(-35, 26, -30)
+    scene.add(fill)
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x20262b, roughness: 1 }))
+    /* Sky dome, lit by nothing and drawn from the inside. */
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(230, 24, 16),
+      new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false }))
+    scene.add(sky)
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180),
+      new THREE.MeshStandardMaterial({ map: noiseTexture(0x22282d, .10, 14), roughness: 1 }))
     ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
     scene.add(ground)
 
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x373d42, roughness: .95 })
+    const roadMat = new THREE.MeshStandardMaterial({
+      map: noiseTexture(0x3a4045, .07, 9), roughness: .92, metalness: .02 })
     const ns = new THREE.Mesh(new THREE.PlaneGeometry(24, 150), roadMat)
-    ns.rotation.x = -Math.PI / 2; ns.position.y = .01; scene.add(ns)
+    ns.rotation.x = -Math.PI / 2; ns.position.y = .01; ns.receiveShadow = true; scene.add(ns)
     const ew = new THREE.Mesh(new THREE.PlaneGeometry(150, 24), roadMat)
-    ew.rotation.x = -Math.PI / 2; ew.position.y = .012; scene.add(ew)
+    ew.rotation.x = -Math.PI / 2; ew.position.y = .012; ew.receiveShadow = true; scene.add(ew)
 
-    const markMat = new THREE.MeshBasicMaterial({ color: 0xd6d8d9 })
+    /* Road paint is worn and lit by the scene, not self-illuminated. */
+    const markMat = new THREE.MeshStandardMaterial({ color: 0xb9bdbd, roughness: .8 })
     const stripe = (x, z, w, d) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), markMat)
       m.rotation.x = -Math.PI / 2; m.position.set(x, .026, z); scene.add(m)
     }
-    for (let z = -68; z <= 68; z += 10) stripe(0, z, .16, 4.5)
-    for (let x = -68; x <= 68; x += 10) stripe(x, 0, 4.5, .16)
-    stripe(0, -13, 19, .45); stripe(0, 13, 19, .45); stripe(-13, 0, .45, 19); stripe(13, 0, .45, 19)
+    for (let z = -68; z <= 68; z += 10) if(Math.abs(z) > 18) stripe(0, z, .16, 4.5)
+    for (let x = -68; x <= 68; x += 10) if(Math.abs(x) > 18) stripe(x, 0, 4.5, .16)
+    stripe(0, -16.3, 19, .45); stripe(0, 16.3, 19, .45)
+    stripe(-16.3, 0, .45, 19); stripe(16.3, 0, .45, 19)
 
-    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x454d54, roughness: 1 })
-    ;[[-38,-38],[38,-38],[-38,38],[38,38]].forEach(([x,z], i) => {
-      const h = 8 + (i % 3) * 5
-      const b = new THREE.Mesh(new THREE.BoxGeometry(28, h, 28), buildingMat)
-      b.position.set(x, h / 2, z); scene.add(b)
+    /* Centre line in yellow, which is what actually separates the directions
+       and reads instantly as a road rather than a grey band. */
+    const centreMat = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: .75 })
+    const centre = (x,z,w,d) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w,d), centreMat)
+      m.rotation.x = -Math.PI/2; m.position.set(x,.03,z); scene.add(m)
+    }
+    for(let z=20; z<=74; z+=1){ if(z%2===0){ centre(0,z,.3,1.2); centre(0,-z,.3,1.2) } }
+    for(let x=20; x<=74; x+=1){ if(x%2===0){ centre(x,0,1.2,.3); centre(-x,0,1.2,.3) } }
+
+    /* Straight-ahead arrows on each approach lane. */
+    const arrowMat = new THREE.MeshStandardMaterial({ color: 0xb9bdbd, roughness: .8 })
+    const arrow = (x,z,rot) => {
+      const g = new THREE.Group()
+      const shaft = new THREE.Mesh(new THREE.PlaneGeometry(.5,2.4), arrowMat)
+      shaft.position.y = -.4
+      const headGeo = new THREE.BufferGeometry()
+      headGeo.setAttribute('position', new THREE.Float32BufferAttribute(
+        [-.75,1.0,0,  .75,1.0,0,  0,2.0,0], 3))
+      headGeo.computeVertexNormals()
+      const head = new THREE.Mesh(headGeo, arrowMat)
+      g.add(shaft, head)
+      g.rotation.x = -Math.PI/2
+      g.position.set(x,.03,z); g.rotation.z = rot
+      scene.add(g)
+    }
+    arrow(-4,-24,0); arrow(4,24,Math.PI)
+    arrow(-24,4,Math.PI/2); arrow(24,-4,-Math.PI/2)
+
+    /* ---------- kerbs and footpaths ---------- */
+    const kerbMat = new THREE.MeshStandardMaterial({ color: 0x6b7278, roughness: .9 })
+    const pathMat = new THREE.MeshStandardMaterial({
+      map: noiseTexture(0x4e555c, .09, 10), roughness: 1 })
+    ;[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(53,.5,53), pathMat)
+      foot.position.set(sx*38.5, .25, sz*38.5); foot.receiveShadow = true; scene.add(foot)
+      const k1 = new THREE.Mesh(new THREE.BoxGeometry(53,.62,.7), kerbMat)
+      k1.position.set(sx*38.5, .31, sz*12.35); scene.add(k1)
+      const k2 = new THREE.Mesh(new THREE.BoxGeometry(.7,.62,53), kerbMat)
+      k2.position.set(sx*12.35, .31, sz*38.5); scene.add(k2)
     })
 
-    const lampMeshes = []
-    const addSignal = (x, z, axis) => {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,5.4), new THREE.MeshStandardMaterial({ color: 0x6f777c }))
-      pole.position.set(x,2.7,z); scene.add(pole)
-      const box = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.4,.7), new THREE.MeshStandardMaterial({ color: 0x15191c }))
-      box.position.set(x,5.35,z); scene.add(box)
-      const colors = [0xe34f4f,0xe5b94d,0x43cf7c]
-      colors.forEach((c, idx) => {
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(.22,16,16), new THREE.MeshBasicMaterial({ color: idx === 0 ? c : 0x22282c }))
-        bulb.position.set(x,6.0 - idx*.62,z+.38); scene.add(bulb)
-        lampMeshes.push({ bulb, axis, idx, color:c })
-      })
+    /* ---------- zebra crossings on all four arms ---------- */
+    /* Zebra crossings.
+       Wide, bright bars with a faint emissive lift so they stay readable at
+       dusk, plus a soft light panel beneath the crossing. The crossing is the
+       thing a viewer needs to find first to understand where people walk, so
+       it is deliberately the brightest paint on the road. */
+    const zebraMat = new THREE.MeshStandardMaterial({
+      color: 0xf4f7f8, roughness: .55, emissive: 0xdfe8ee, emissiveIntensity: .32 })
+    const zebraGlowMat = new THREE.MeshBasicMaterial({
+      map: glowTexture(), color: 0xbfd8ea, transparent: true, opacity: .13,
+      blending: THREE.AdditiveBlending, depthWrite: false })
+    const zebra = (x,z,horizontal) => {
+      /* wash of light marking the crossing zone */
+      const pad = new THREE.Mesh(
+        horizontal ? new THREE.PlaneGeometry(30,11) : new THREE.PlaneGeometry(11,30), zebraGlowMat)
+      pad.rotation.x = -Math.PI/2; pad.position.set(x,.028,z); scene.add(pad)
+      for(let o=-10.4;o<=10.4;o+=2.6){
+        const g = horizontal ? new THREE.PlaneGeometry(1.5,5.2) : new THREE.PlaneGeometry(5.2,1.5)
+        const m = new THREE.Mesh(g, zebraMat)
+        m.rotation.x = -Math.PI/2
+        m.position.set(horizontal ? x+o : x, .042, horizontal ? z : z+o)
+        m.receiveShadow = true
+        scene.add(m)
+      }
     }
-    addSignal(-9,-9,'NS'); addSignal(9,9,'NS'); addSignal(-9,9,'EW'); addSignal(9,-9,'EW')
+    zebra(0,-15,true); zebra(0,15,true); zebra(-15,0,false); zebra(15,0,false)
+
+    /* ---------- city block: varied heights, colours and lit windows ---------- */
+    const BUILDING_TONES = [
+      [0x4a5560,0xffd9a0],[0x565060,0xffcf8a],[0x3f5157,0xdfeaff],
+      [0x60544a,0xffe0b0],[0x475a55,0xcfeee0],[0x54495c,0xffd4e6],
+    ]
+    const blocks = [
+      [-40,-40,26,26],[ 40,-40,26,26],[-40, 40,26,26],[ 40, 40,26,26],
+      [-72,-30,22,20],[ 72,-30,22,20],[-72, 34,22,20],[ 72, 34,22,20],
+      [-30,-74,20,22],[ 34,-74,20,22],[-30, 74,20,22],[ 34, 74,20,22],
+    ]
+    blocks.forEach(([x,z,w,d], i) => {
+      const h = 9 + ((i * 7) % 5) * 6
+      const [base, lit] = BUILDING_TONES[i % BUILDING_TONES.length]
+      const { map, emissiveMap } = makeFacade(base, lit, i + 1)
+      map.wrapS = map.wrapT = emissiveMap.wrapS = emissiveMap.wrapT = THREE.RepeatWrapping
+      map.repeat.set(Math.max(1,Math.round(w/9)), Math.max(1,Math.round(h/7)))
+      emissiveMap.repeat.copy(map.repeat)
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({
+        map, emissiveMap, emissive: 0xffffff, emissiveIntensity: .85, roughness: .9,
+      }))
+      b.position.set(x, h/2 + .5, z); b.castShadow = true; b.receiveShadow = true; scene.add(b)
+      /* roof slab reads as a parapet and stops the facade texture wrapping oddly */
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w+.6,.8,d+.6),
+        new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness:1 }))
+      roof.position.set(x, h + .9, z); scene.add(roof)
+    })
+
+    /* ---------- street trees on the footpaths ---------- */
+    const trunkMat = new THREE.MeshStandardMaterial({ color:0x4a3a2c, roughness:1 })
+    const leafMat  = new THREE.MeshStandardMaterial({ color:0x2f6d45, roughness:.95 })
+    ;[[-17,-22],[-17,22],[17,-22],[17,22],[-22,-17],[22,-17],[-22,17],[22,17]].forEach(([x,z])=>{
+      const tr = new THREE.Mesh(new THREE.CylinderGeometry(.2,.26,2.2), trunkMat)
+      tr.position.set(x,1.6,z); scene.add(tr)
+      const cr = new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8), leafMat)
+      cr.position.set(x,3.4,z); cr.scale.y = .82; cr.castShadow = true; scene.add(cr)
+    })
+
+    /* ---------- street lighting ---------- */
+    const streetLamps = []
+    const poleMat = new THREE.MeshStandardMaterial({ color:0x555d64, roughness:.8 })
+    const addStreetLamp = (x,z,rotY) => {
+      const g = new THREE.Group()
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.15,.2,9), poleMat)
+      pole.position.y = 4.5; g.add(pole)
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.6,.16,.16), poleMat)
+      arm.position.set(1.3,8.9,0); g.add(arm)
+      const headMat = new THREE.MeshStandardMaterial({
+        color:0xfff0cf, emissive:0xffcf7a, emissiveIntensity:1.6, roughness:.5 })
+      const head = new THREE.Mesh(new THREE.BoxGeometry(1.5,.3,.7), headMat)
+      head.position.set(2.5,8.75,0); g.add(head)
+      const glow = makeGlow(0xffc879, 7); glow.position.set(2.5,8.6,0); glow.material.opacity = .55
+      g.add(glow)
+      /* warm pool of light on the road surface */
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(13,13),
+        new THREE.MeshBasicMaterial({ map: glowTexture(), color:0xffc879, transparent:true,
+          opacity:.20, blending: THREE.AdditiveBlending, depthWrite:false }))
+      pool.rotation.x = -Math.PI/2; pool.position.set(2.5,.05,0); g.add(pool)
+      g.position.set(x,0,z); g.rotation.y = rotY
+      scene.add(g)
+      streetLamps.push({ head, glow, pool })
+    }
+    ;[-30,-52,-74].forEach(z=>{ addStreetLamp(-14.5,z,0); addStreetLamp(14.5,z,Math.PI) })
+    ;[30,52,74].forEach(z=>{ addStreetLamp(-14.5,z,0); addStreetLamp(14.5,z,Math.PI) })
+    ;[-30,-52,-74].forEach(x=>{ addStreetLamp(x,-14.5,Math.PI/2); addStreetLamp(x,14.5,-Math.PI/2) })
+    ;[30,52,74].forEach(x=>{ addStreetLamp(x,-14.5,Math.PI/2); addStreetLamp(x,14.5,-Math.PI/2) })
+
+    /* A few real lights so the scene has genuine falloff, rather than
+       relying on emissive materials alone. Kept to four for weak GPUs. */
+    ;[[-26,-26],[26,-26],[-26,26],[26,26]].forEach(([x,z])=>{
+      const l = new THREE.PointLight(0xffc879, 26, 60, 2)
+      l.position.set(x,9,z); scene.add(l)
+    })
+
+    /* ---------- traffic signals ----------
+       Bigger heads, a hood over each lamp, an emissive lens and an additive
+       glow sprite. The active aspect should be unmistakable at a glance from
+       across the room, which the old flat-coloured spheres were not. */
+    const lampMeshes = []
+    const pedSignals = []
+    const addSignal = (x, z, axis, facing) => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,6.2),
+        new THREE.MeshStandardMaterial({ color: 0x6f777c, roughness:.7 }))
+      pole.position.set(x,3.1,z); scene.add(pole)
+
+      const head = new THREE.Group()
+      head.position.set(x,5.9,z); head.rotation.y = facing
+      const box = new THREE.Mesh(new THREE.BoxGeometry(1.5,3.5,.85),
+        new THREE.MeshStandardMaterial({ color: 0x11161a, roughness:.85 }))
+      head.add(box)
+      const backplate = new THREE.Mesh(new THREE.BoxGeometry(2.2,4.2,.12),
+        new THREE.MeshStandardMaterial({ color: 0x0d1114, roughness:1 }))
+      backplate.position.z = -.5; head.add(backplate)
+
+      const colors = [0xff4b4b,0xffc23d,0x3ce87c]
+      colors.forEach((c, idx) => {
+        const y = 1.12 - idx*1.12
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(.42,20),
+          new THREE.MeshStandardMaterial({ color:0x1b2126, emissive:c, emissiveIntensity:0, roughness:.35 }))
+        lens.position.set(0,y,.44); head.add(lens)
+        /* hood, so an unlit lamp still reads as a lamp */
+        const hood = new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.42,16,1,true,0,Math.PI),
+          new THREE.MeshStandardMaterial({ color:0x0b0e11, roughness:1, side:THREE.DoubleSide }))
+        hood.rotation.set(Math.PI/2,0,0); hood.position.set(0,y+.12,.58); head.add(hood)
+        const glow = makeGlow(c, 3.1); glow.position.set(0,y,.75); head.add(glow)
+        lampMeshes.push({ lens, glow, axis, idx, color:c })
+      })
+      scene.add(head)
+
+      /* pedestrian head on the same pole: the green figure shows exactly when
+         the parallel crossing is safe, which is what the walkers obey */
+      const ped = new THREE.Group()
+      ped.position.set(x,3.3,z); ped.rotation.y = facing
+      const pbox = new THREE.Mesh(new THREE.BoxGeometry(.9,1.5,.5),
+        new THREE.MeshStandardMaterial({ color:0x11161a, roughness:.9 }))
+      ped.add(pbox)
+      const plens = new THREE.Mesh(new THREE.CircleGeometry(.3,16),
+        new THREE.MeshStandardMaterial({ color:0x1b2126, emissive:0xff4b4b, emissiveIntensity:.9, roughness:.4 }))
+      plens.position.z = .27; ped.add(plens)
+      const pglow = makeGlow(0xffffff, 1.9); pglow.position.z = .45; ped.add(pglow)
+      scene.add(ped)
+      pedSignals.push({ lens:plens, glow:pglow, axis })
+    }
+    addSignal(-13.5,-13.5,'NS',Math.PI/4); addSignal(13.5,13.5,'NS',Math.PI*1.25)
+    addSignal(-13.5,13.5,'EW',Math.PI*.75); addSignal(13.5,-13.5,'EW',Math.PI*1.75)
+
+    /* ---------- pedestrians ----------
+       They wait on the kerb and only step out when their crossing is safe, so
+       the crowd is a live readout of the signal plan rather than set dressing. */
+    const people = []
+    CROSSWALKS.forEach((cw, ci) => {
+      for(let i=0;i<5;i++){
+        const g = makePerson(ci*5+i)
+        const dir = i % 2 === 0 ? 1 : -1
+        g.userData.cw = cw
+        g.userData.dir = dir
+        g.userData.t = dir > 0 ? -0.06 - i*0.05 : 1.06 + i*0.05
+        g.userData.speed = 0.16 + (i % 3) * 0.035
+        g.userData.lane = (i - 2) * 0.9
+        scene.add(g)
+        people.push(g)
+      }
+    })
 
     const pools = {}
     const dirConfig = {
-      north: { lane:-4, axis:'z', sign:1, start:-14, rot:0 },
-      south: { lane:4, axis:'z', sign:-1, start:14, rot:Math.PI },
-      east:  { lane:4, axis:'x', sign:-1, start:14, rot:Math.PI/2 },
-      west:  { lane:-4, axis:'x', sign:1, start:-14, rot:-Math.PI/2 },
+      north: { lane:-4, axis:'z', sign:1, start:-17.2, rot:0 },
+      south: { lane:4, axis:'z', sign:-1, start:17.2, rot:Math.PI },
+      east:  { lane:4, axis:'x', sign:-1, start:17.2, rot:Math.PI/2 },
+      west:  { lane:-4, axis:'x', sign:1, start:-17.2, rot:-Math.PI/2 },
     }
 
     const createCar = (dir, i) => {
       const c = new THREE.Group()
       const variants = {}
       VKEYS.forEach(k=>{
-        const v = VEHICLES[k]
-        const g = new THREE.Group()
-        const shade = [0,-.10,.10][i%3]
-        const col = new THREE.Color(v.color).offsetHSL(0,0,shade)
-        const body = new THREE.Mesh(new THREE.BoxGeometry(v.w,v.h,v.d),
-          new THREE.MeshStandardMaterial({ color:col, roughness:.7 }))
-        body.position.y = v.h/2 + .18
-        g.add(body)
-        if(k==='bus'){
-          const win = new THREE.Mesh(new THREE.BoxGeometry(v.w+.02,.9,v.d*.8),
-            new THREE.MeshStandardMaterial({ color:0x22303c, roughness:.4 }))
-          win.position.y = v.h*.72; g.add(win)
-        }
-        if(k==='auto'){
-          const roof = new THREE.Mesh(new THREE.BoxGeometry(v.w*.95,.22,v.d*.9),
-            new THREE.MeshStandardMaterial({ color:0x1f2a33 }))
-          roof.position.y = v.h + .28; g.add(roof)
-        }
-        if(k==='bike'){
-          const rider = new THREE.Mesh(new THREE.BoxGeometry(.5,.75,.5),
-            new THREE.MeshStandardMaterial({ color:0x3d4a57 }))
-          rider.position.y = v.h + .5; g.add(rider)
-        }
-        g.visible=false; c.add(g); variants[k]=g
+        const g = buildVehicle(k, i)
+        c.add(g); variants[k] = g
       })
       c.visible=false
       c.userData={dir,target:new THREE.Vector3(),variants}
@@ -220,16 +763,12 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     Object.keys(dirConfig).forEach(dir => pools[dir] = Array.from({length:24},(_,i)=>createCar(dir,i)))
 
     /* ---------- departing vehicles: they drive through, not vanish ---------- */
-    const departPool = Array.from({length:40}, ()=>{
+    const departPool = Array.from({length:40}, (_,i)=>{
       const c = new THREE.Group()
       const variants = {}
       VKEYS.forEach(k=>{
-        const v = VEHICLES[k]
-        const g = new THREE.Group()
-        const body = new THREE.Mesh(new THREE.BoxGeometry(v.w,v.h,v.d),
-          new THREE.MeshStandardMaterial({ color:v.color, roughness:.7 }))
-        body.position.y = v.h/2 + .18
-        g.add(body); g.visible=false; c.add(g); variants[k]=g
+        const g = buildVehicle(k, i)
+        c.add(g); variants[k] = g
       })
       c.visible=false
       c.userData={active:false,dir:'north',kind:'car',dist:0,speed:0,variants}
@@ -242,6 +781,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
     const evBody = new THREE.Mesh(new THREE.BoxGeometry(2.3,1.6,5.2),
       new THREE.MeshStandardMaterial({ color: 0xf2f4f6, roughness:.5 }))
     evBody.position.y = 1.0
+    evBody.castShadow = true
     evGroup.add(evBody)
     const evCab = new THREE.Mesh(new THREE.BoxGeometry(2.1,1.0,1.6),
       new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness:.4 }))
@@ -269,7 +809,7 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
 
     ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,phase:'NS',
       queues:{north:0,south:0,east:0,west:0},types:null,departPool,departQueue:[],
-      evGroup,evBody,evBeacon,evGlow,ev:null}
+      evGroup,evBody,evBeacon,evGlow,ev:null,people,pedSignals,streetLamps}
 
     const clock = new THREE.Clock(); let raf=0
     const animate=()=>{
@@ -349,15 +889,56 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
       }
 
       /* congestion glow — the scene itself reddens as the junction chokes */
+      /* A gentle warm haze as the junction chokes. The old version drove the
+         whole sky to red, which read as a video game rather than a street. */
       const load = Math.min(1, (c.totalQueue||0) / 26)
-      const tint = new THREE.Color(0x0b1015).lerp(new THREE.Color(0x2a0f12), load)
+      const tint = new THREE.Color(0x0e141a).lerp(new THREE.Color(0x241a1c), load * .75)
       c.scene.background.copy(tint); c.scene.fog.color.copy(tint)
 
-      c.lampMeshes.forEach(({bulb,axis,idx,color})=>{
+      c.lampMeshes.forEach(({lens,glow,axis,idx,color})=>{
         const isAmber = c.phase === 'AMBER' && idx === 1
         const isGreen = c.phase === axis && idx === 2
         const isRed = c.phase !== 'AMBER' && c.phase !== axis && idx === 0
-        bulb.material.color.setHex(isAmber||isGreen||isRed?color:0x22282c)
+        const on = isAmber || isGreen || isRed
+        lens.material.emissiveIntensity = on ? 2.4 : 0.04
+        lens.material.color.setHex(on ? color : 0x1b2126)
+        /* ease the glow instead of snapping it, so a change of phase reads as
+           an event rather than a flicker */
+        glow.material.opacity += ((on ? .95 : 0) - glow.material.opacity) * Math.min(1, dt*12)
+      })
+
+      /* pedestrian aspect: walk when the parallel traffic is stopped */
+      c.pedSignals.forEach(({lens,glow,axis})=>{
+        const walk = c.phase !== 'AMBER' && c.phase !== axis
+        lens.material.emissive.setHex(walk ? 0x8affc0 : 0xff4b4b)
+        lens.material.emissiveIntensity = walk ? 2.0 : 1.0
+        glow.material.color.setHex(walk ? 0x8affc0 : 0xff4b4b)
+        glow.material.opacity += ((walk ? .5 : .22) - glow.material.opacity) * Math.min(1, dt*10)
+      })
+
+      /* people: cross only while their arm is stopped, otherwise hold the kerb */
+      c.people.forEach(pr=>{
+        const u = pr.userData, cw = u.cw
+        const safe = c.phase === cw.safeOn
+        const inRoad = u.t > 0.02 && u.t < 0.98
+        /* someone already in the carriageway finishes crossing rather than
+           freezing mid-road when the phase changes */
+        const moving = safe || inRoad
+        if(moving) u.t += u.dir * u.speed * dt
+        if(u.t > 1.12){ u.t = -0.06; u.dir = 1 }
+        if(u.t < -0.12){ u.t = 1.06; u.dir = -1 }
+
+        const clamped = Math.min(1.14, Math.max(-0.14, u.t))
+        const along = cw.from + (cw.to - cw.from) * clamped
+        if(cw.axis === 'x') pr.position.set(along, .5, cw.fixed + u.lane*0.55)
+        else pr.position.set(cw.fixed + u.lane*0.55, .5, along)
+        pr.rotation.y = cw.axis === 'x'
+          ? (u.dir > 0 ? Math.PI/2 : -Math.PI/2)
+          : (u.dir > 0 ? 0 : Math.PI)
+
+        const swing = moving ? Math.sin(t*7 + u.phase) : 0
+        u.legs.rotation.x = swing * .5
+        u.torso.position.y = .93 + (moving ? Math.abs(Math.sin(t*7 + u.phase))*.04 : 0)
       })
       c.renderer.render(c.scene,c.camera)
     }
@@ -396,8 +977,10 @@ function IntersectionTwin({ frame, mode, title, accent, phase, ev, preempting, f
 
   useEffect(()=>{
     if(!ctx.current) return
-    if(mode==='bird'){ctx.current.camera.position.set(48,58,50);ctx.current.camera.lookAt(0,0,0)}
-    else {ctx.current.camera.position.set(7,4,-48);ctx.current.camera.lookAt(0,2,4)}
+    /* Three-quarter framing rather than square-on: the junction, the queue and
+       the skyline all stay in shot, which is what makes the still read well. */
+    if(mode==='bird'){ctx.current.camera.position.set(40,46,44);ctx.current.camera.lookAt(0,1,0)}
+    else {ctx.current.camera.position.set(11,5.2,-42);ctx.current.camera.lookAt(0,2.2,6)}
   },[mode])
 
   const shownPhase = phase || frame?.phase
@@ -720,70 +1303,214 @@ function simulateCorridor(scenario, incident, steps, seed, mix, profile){
   return { steps, seed, scenario, incident, fixed:run('fixed'), smart:run('smart') }
 }
 
+/* Corridor renderer.
+
+   The 3D twins get the detail treatment; this panel was still flat grey
+   rectangles, which made the most important claim in the whole demo -- that
+   emptying a junction into a full link only moves the jam -- the least legible
+   thing on the page. Same principles applied in 2D: a lit sky to sit against,
+   surfaces with depth, vehicles you can tell apart, and glow on the things that
+   carry meaning (the signals, and the link when it backs up). */
+
+const CORR_H = 210
+
+/* Vehicle bodies drawn side-on. Silhouette carries the class, exactly as in
+   the 3D scene, so the two views agree with each other. */
+function drawVehicle(x, kind, px, py, len, horizontal, lit){
+  const v = VEHICLES[kind]
+  const body = '#'+v.color.toString(16).padStart(6,'0')
+  const thick = kind === 'bus' ? 12 : kind === 'bike' ? 7 : kind === 'auto' ? 10 : 10
+  const w = horizontal ? len : thick
+  const h = horizontal ? thick : len
+  const x0 = px - w/2, y0 = py - h/2
+
+  x.save()
+  /* contact shadow so the vehicle sits on the road rather than floating */
+  x.fillStyle = 'rgba(0,0,0,.38)'
+  x.beginPath(); x.roundRect(x0+1.5, y0+2.5, w, h, 3); x.fill()
+
+  x.fillStyle = body
+  x.beginPath(); x.roundRect(x0, y0, w, h, kind === 'bus' ? 2.5 : 3); x.fill()
+
+  /* glazing: a band for the bus, a cabin for the car, a canopy for the auto */
+  x.fillStyle = 'rgba(20,34,46,.85)'
+  if(kind === 'bus'){
+    if(horizontal) x.fillRect(x0+len*.12, y0+2.5, len*.76, 4)
+    else           x.fillRect(x0+2.5, y0+len*.12, 4, len*.76)
+  } else if(kind === 'car'){
+    if(horizontal) x.fillRect(x0+len*.30, y0+2, len*.42, 3.2)
+    else           x.fillRect(x0+2, y0+len*.30, 3.2, len*.42)
+  } else if(kind === 'auto'){
+    x.fillStyle = 'rgba(14,18,22,.9)'
+    if(horizontal) x.fillRect(x0+len*.15, y0, len*.7, 3.4)
+    else           x.fillRect(x0, y0+len*.15, 3.4, len*.7)
+  } else {
+    /* rider on the two-wheeler */
+    x.fillStyle = '#3c4a58'
+    x.beginPath(); x.arc(px, py - (horizontal?0:1), 2.4, 0, 7); x.fill()
+  }
+
+  /* headlight wash, only for vehicles that are moving through the link */
+  if(lit && horizontal){
+    x.globalCompositeOperation = 'lighter'
+    const g = x.createRadialGradient(px-len*.6, py, 0, px-len*.6, py, 16)
+    g.addColorStop(0, 'rgba(255,214,150,.5)')
+    g.addColorStop(1, 'rgba(255,214,150,0)')
+    x.fillStyle = g
+    x.beginPath(); x.arc(px-len*.6, py, 16, 0, 7); x.fill()
+  }
+  x.restore()
+}
+
 function CorridorView({ frame, title, tone }){
   const ref = useRef(null)
+  /* The canvas can measure 0 wide on the first effect, before layout has
+     settled, which leaves it blank until the next frame arrives. Track the
+     observed width and redraw whenever it changes. */
+  const [width, setWidth] = useState(0)
+  useEffect(()=>{
+    const c = ref.current; if(!c) return
+    const ro = new ResizeObserver(()=> setWidth(c.clientWidth))
+    ro.observe(c)
+    setWidth(c.clientWidth)
+    return ()=> ro.disconnect()
+  },[])
+
   useEffect(()=>{
     const c = ref.current; if(!c || !frame) return
     const dpr = Math.min(window.devicePixelRatio||1, 2)
-    const W = c.clientWidth, H = 190
+    const W = width || c.clientWidth, H = CORR_H
+    if(W < 2) return
     c.width = W*dpr; c.height = H*dpr
     const x = c.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0)
     x.clearRect(0,0,W,H)
 
-    const jA = W*0.30, jB = W*0.74, midY = H*0.56, roadH = 26
-    /* corridor road */
-    x.fillStyle = '#2b333b'; x.fillRect(0, midY-roadH/2, W, roadH)
-    /* cross roads */
-    ;[jA,jB].forEach(jx=>{ x.fillStyle='#2b333b'; x.fillRect(jx-roadH/2, 12, roadH, H-24) })
-    /* lane dashes */
-    x.strokeStyle='#4c565f'; x.setLineDash([9,9]); x.lineWidth=1.4
+    const jA = W*0.30, jB = W*0.74, midY = H*0.60, roadH = 34
+    const roadTop = midY-roadH/2, roadBot = midY+roadH/2
+    const pct = Math.min(100, frame.linkPct)
+
+    /* ---------- sky ---------- */
+    const sky = x.createLinearGradient(0,0,0,midY)
+    sky.addColorStop(0,'#0a1017'); sky.addColorStop(.7,'#16222e'); sky.addColorStop(1,'#2a3340')
+    x.fillStyle = sky; x.fillRect(0,0,W,midY)
+
+    /* ---------- skyline, with lit windows ---------- */
+    let seed = 7
+    const rnd = () => { seed = (seed*9301+49297)%233280; return seed/233280 }
+    x.fillStyle = '#141d27'
+    const skyline = []
+    for(let bx=-20; bx<W+40; bx += 26+rnd()*22){
+      const bw = 20+rnd()*26, bh = 26+rnd()*54
+      skyline.push([bx,bw,bh]); x.fillRect(bx, midY-roadH/2-bh-14, bw, bh)
+    }
+    skyline.forEach(([bx,bw,bh])=>{
+      for(let wy=midY-roadH/2-bh-8; wy<midY-roadH/2-20; wy+=9){
+        for(let wx=bx+3; wx<bx+bw-4; wx+=7){
+          if(rnd()>.55){ x.fillStyle = rnd()>.4 ? 'rgba(255,209,150,.5)' : 'rgba(150,190,235,.28)'
+            x.fillRect(wx, wy, 3, 4) }
+        }
+      }
+    })
+
+    /* ---------- ground and footpaths ---------- */
+    x.fillStyle = '#1b2229'; x.fillRect(0, midY-roadH/2-14, W, H-(midY-roadH/2-14))
+    x.fillStyle = '#333b43'
+    x.fillRect(0, roadTop-9, W, 9); x.fillRect(0, roadBot, W, 9)
+
+    /* ---------- asphalt ---------- */
+    const tar = x.createLinearGradient(0, roadTop, 0, roadBot)
+    tar.addColorStop(0,'#3d444b'); tar.addColorStop(.5,'#333a41'); tar.addColorStop(1,'#2b3239')
+    x.fillStyle = tar; x.fillRect(0, roadTop, W, roadH)
+    ;[jA,jB].forEach(jx=>{ x.fillStyle='#333a41'; x.fillRect(jx-roadH/2, 14, roadH, H-28) })
+
+    /* ---------- lane paint ---------- */
+    x.strokeStyle='rgba(201,162,39,.85)'; x.setLineDash([12,10]); x.lineWidth=1.6
     x.beginPath(); x.moveTo(0,midY); x.lineTo(W,midY); x.stroke(); x.setLineDash([])
 
-    /* link fill indicator */
-    const pct = Math.min(100, frame.linkPct)
-    const lx0 = jA+roadH/2, lx1 = jB-roadH/2
-    x.fillStyle = pct>92 ? 'rgba(239,94,94,.22)' : pct>65 ? 'rgba(240,189,88,.16)' : 'rgba(98,207,251,.10)'
-    x.fillRect(lx0, midY-roadH/2, (lx1-lx0)*pct/100, roadH)
+    /* zebra crossings on the approach to each junction */
+    x.fillStyle='rgba(238,243,246,.82)'
+    ;[jA,jB].forEach(jx=>{
+      for(let zy=roadTop+3; zy<roadBot-2; zy+=6) {
+        x.fillRect(jx-roadH/2-11, zy, 7, 3.4)
+        x.fillRect(jx+roadH/2+4,  zy, 7, 3.4)
+      }
+    })
 
+    /* ---------- link occupancy ---------- */
+    const lx0 = jA+roadH/2, lx1 = jB-roadH/2
+    const heavy = pct>92, warm = pct>65
+    const fill = x.createLinearGradient(lx0, 0, lx1, 0)
+    if(heavy){ fill.addColorStop(0,'rgba(239,94,94,.34)'); fill.addColorStop(1,'rgba(239,94,94,.16)') }
+    else if(warm){ fill.addColorStop(0,'rgba(240,189,88,.26)'); fill.addColorStop(1,'rgba(240,189,88,.10)') }
+    else { fill.addColorStop(0,'rgba(98,207,251,.18)'); fill.addColorStop(1,'rgba(98,207,251,.06)') }
+    x.fillStyle = fill
+    x.fillRect(lx0, roadTop, (lx1-lx0)*pct/100, roadH)
+
+    /* a full link is the whole point of this panel, so it glows */
+    if(heavy){
+      x.save(); x.shadowColor='rgba(255,90,90,.9)'; x.shadowBlur=18
+      x.strokeStyle='rgba(255,120,120,.85)'; x.lineWidth=2
+      x.strokeRect(lx0, roadTop+1, lx1-lx0, roadH-2); x.restore()
+    }
+
+    /* ---------- queues and link traffic ---------- */
     const draw = (list, x0, y0, dx, dy) => {
       let cur = 0
       list.slice(0,26).forEach(t=>{
         const k = typeof t === 'string' ? t : t.k
-        const v = VEHICLES[k]; const len = v.len*1.5
+        const len = VEHICLES[k].len*1.5
         cur += len
-        const px = x0 + dx*(cur-len/2), py = y0 + dy*(cur-len/2)
-        x.fillStyle = '#'+v.color.toString(16).padStart(6,'0')
-        if(dx) x.fillRect(px-len/2, py-4.5, len, 9)
-        else   x.fillRect(px-4.5, py-len/2, 9, len)
+        drawVehicle(x, k, x0 + dx*(cur-len/2), y0 + dy*(cur-len/2), len, dx!==0, false)
       })
     }
-    /* queues */
-    draw(frame.types.upMain,   jA-roadH/2, midY-7, -1, 0)
-    draw(frame.types.downMain, jB-roadH/2, midY-7, -1, 0)
-    draw(frame.types.upCross,  jA, 14, 0, 1)
-    draw(frame.types.downCross,jB, 14, 0, 1)
-    /* link vehicles positioned by progress */
+    draw(frame.types.upMain,   jA-roadH/2-12, midY-8, -1, 0)
+    draw(frame.types.downMain, jB-roadH/2-12, midY-8, -1, 0)
+    /* Cross traffic queues back *away* from the stop line, so the first
+       vehicle sits at the junction and the tail grows towards the top of the
+       frame. Drawing it downwards from the canvas edge put the head of the
+       queue in the wrong place and made a long queue look like a short one. */
+    draw(frame.types.upCross,  jA, roadTop-14, 0, -1)
+    draw(frame.types.downCross,jB, roadTop-14, 0, -1)
     frame.types.link.forEach(v=>{
-      const vv = VEHICLES[v.k], len = vv.len*1.5
-      const px = lx0 + (lx1-lx0)*Math.min(1,Math.max(0,v.p))
-      x.fillStyle = '#'+vv.color.toString(16).padStart(6,'0')
-      x.fillRect(px-len/2, midY+2, len, 9)
+      const len = VEHICLES[v.k].len*1.5
+      drawVehicle(x, v.k, lx0 + (lx1-lx0)*Math.min(1,Math.max(0,v.p)), midY+9, len, true, true)
     })
-    /* signals */
-    const lamp=(cx,cy,on,col)=>{ x.beginPath(); x.arc(cx,cy,4.6,0,7); x.fillStyle=on?col:'#232b32'; x.fill() }
-    ;[[jA,frame.phaseA],[jB,frame.phaseB]].forEach(([jx,ph])=>{
-      lamp(jx-roadH/2-11, midY-15, ph==='THROUGH', '#43cf7c')
-      lamp(jx-roadH/2-11, midY-3,  ph==='AMBER',   '#e5b94d')
-      lamp(jx-roadH/2-11, midY+9,  ph==='CROSS',   '#e34f4f')
-    })
-    /* labels */
-    x.fillStyle='#93a8ba'; x.font='600 11px system-ui'; x.textAlign='center'
-    x.fillText(CORRIDOR.up.name,   jA, H-6)
-    x.fillText(CORRIDOR.down.name, jB, H-6)
-    x.fillStyle= pct>92?'#ff8f8f':'#7f93a5'; x.font='10px system-ui'
-    x.fillText(`link ${CORRIDOR.linkKm} km · ${frame.linkPcu} PCU · ${pct}% full${frame.spill?'  ⚠ SPILLBACK':''}`,
-      (lx0+lx1)/2, midY-roadH/2-7)
-  },[frame])
+
+    /* ---------- signal heads ---------- */
+    const head = (cx, cy, ph) => {
+      x.fillStyle = '#0d1216'
+      x.beginPath(); x.roundRect(cx-7, cy-20, 14, 40, 4); x.fill()
+      x.strokeStyle='rgba(255,255,255,.10)'; x.lineWidth=1; x.stroke()
+      const lamp = (ly, on, col) => {
+        x.save()
+        if(on){ x.shadowColor = col; x.shadowBlur = 14 }
+        x.beginPath(); x.arc(cx, ly, 4.6, 0, 7)
+        x.fillStyle = on ? col : '#1e262c'; x.fill()
+        x.restore()
+      }
+      lamp(cy-11, ph==='THROUGH', '#3ce87c')
+      lamp(cy,    ph==='AMBER',   '#ffc23d')
+      lamp(cy+11, ph==='CROSS',   '#ff4b4b')
+    }
+    head(jA-roadH/2-24, midY-34, frame.phaseA)
+    head(jB-roadH/2-24, midY-34, frame.phaseB)
+
+    /* ---------- labels ---------- */
+    x.fillStyle='#a9bccd'; x.font='600 11px system-ui'; x.textAlign='center'
+    x.fillText(CORRIDOR.up.name,   jA, H-7)
+    x.fillText(CORRIDOR.down.name, jB, H-7)
+
+    x.font='10px system-ui'
+    x.fillStyle = heavy ? '#ff9c9c' : warm ? '#f0c274' : '#8ba0b2'
+    x.fillText(`link ${CORRIDOR.linkKm} km · ${frame.linkPcu} PCU · ${pct}% full`,
+      (lx0+lx1)/2, roadTop-16)
+    if(frame.spill){
+      x.save(); x.shadowColor='rgba(255,80,80,.9)'; x.shadowBlur=10
+      x.fillStyle='#ff8f8f'; x.font='700 10px system-ui'
+      x.fillText('SPILLBACK — UPSTREAM GREEN IS WASTED', (lx0+lx1)/2, roadBot+22)
+      x.restore()
+    }
+  },[frame,width])
   return <div className={`corr ${tone}`}>
     <div className="corr-head"><strong>{title}</strong>
       <span>{frame?.spill ? <b className="spill">spillback — upstream green is wasted</b>
@@ -991,15 +1718,21 @@ function App(){
 
   return <main>
     <header className="hero">
-      <div><p className="eyebrow">SIH PS90 · single-intersection proof</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
+      <div><p className="eyebrow">SIH PS90 · adaptive signal control for lane-less traffic</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
       <div className="hero-status">{error?'BACKEND OFFLINE':'LOCAL A/B'}</div>
     </header>
+
+    <ResultStrip/>
 
     <div className="controls">
       <button onClick={()=>setRunning(r=>!r)} disabled={!data}>{running?'⏸ Pause':'▶ Run comparison'}</button>
       <button onClick={()=>{setTick(0);setRunning(false);setEv(null)}}>Reset</button>
       <button onClick={()=>setView(v=>v==='pov'?'bird':'pov')}>{view==='pov'?'Bird’s-eye':'Intersection POV'}</button>
       <button onClick={load}>Reconnect backend</button>
+      <button className="jump-ops"
+              onClick={()=>document.querySelector('.ops')?.scrollIntoView({behavior:'smooth'})}>
+        ↓ Operations console
+      </button>
       <label>Traffic pattern<select value={scenario} onChange={e=>setScenario(e.target.value)}><option value="north-surge">North/south surge</option><option value="east-surge">East/west surge</option><option value="balanced">Balanced traffic</option></select></label>
       <label>Chennai profile<select value={profile} onChange={e=>setProfile(e.target.value)}>
         {Object.keys(PROFILES).map(k=><option key={k} value={k}>{PROFILES[k].label}</option>)}
@@ -1190,6 +1923,8 @@ function App(){
       <Metric label="Throughput change" value={`${throughputGain>=0?'+':''}${throughputGain}%`} hint="vehicles cleared"/>
       <Metric label="Current fixed queue" value={fixed?.total_queue??0} hint={`SmartTraffic: ${adaptive?.total_queue??0}`}/>
     </div>
+
+    <OpsConsole/>
 
   </main>
 }
