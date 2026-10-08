@@ -146,24 +146,24 @@ s.addNotes(
 
 /* ================================================== 2. the assumption (0:25) */
 s = pres.addSlide({ masterName: 'DARK_CONTENT', sectionTitle: 'Deck' })
-s.addText('Signal theory assumes lane discipline', { placeholder: 'title' })
+s.addText('Textbooks assume lanes. We have none.', { placeholder: 'title' })
 
 card(s, M, 1.7, 5.75, 3.9, THEME.colors.dk2, 'assumption card')
-s.addText('What the textbooks assume', { x: M + 0.35, y: 1.95, w: 5.0, h: 0.4,
+s.addText('What the textbooks say', { x: M + 0.35, y: 1.95, w: 5.0, h: 0.4,
   fontSize: 17, bold: true, color: THEME.colors.accent5, isTextBox: true, margin: 0 })
 s.addText(
-  'Vehicles queue single file. One crosses per lane per headway. A fixed factor ' +
-  'converts a bus or a scooter into "car equivalents".',
+  'Traffic queues in neat lanes. One vehicle crosses per lane, per gap. A bus and ' +
+  'a scooter both get turned into "car equivalents" using a fixed number.',
   { x: M + 0.35, y: 2.5, w: 5.0, h: 2.8, fontSize: 15, color: C.background1,
     isTextBox: true, margin: 0 })
 
 card(s, M + 6.15, 1.7, 5.75, 3.9, '2A2114', 'reality card')
-s.addText('What an Indian junction does', { x: M + 6.5, y: 1.95, w: 5.0, h: 0.4,
+s.addText('What actually happens here', { x: M + 6.5, y: 1.95, w: 5.0, h: 0.4,
   fontSize: 17, bold: true, color: THEME.colors.accent1, isTextBox: true, margin: 0 })
 s.addText(
-  'Two-wheelers filter into lateral gaps and cross two or three abreast where one ' +
-  'car fits. What limits the stop line is lateral space — not a factor calibrated ' +
-  'for moving traffic.',
+  'Scooters do not wait their turn in a lane. They filter into gaps and cross three ' +
+  'abreast where one car fits. So what really limits a junction is how much width ' +
+  'a vehicle takes, not a number borrowed from moving traffic.',
   { x: M + 6.5, y: 2.5, w: 5.0, h: 2.8, fontSize: 15, color: C.background1,
     isTextBox: true, margin: 0 })
 
@@ -197,13 +197,13 @@ s.addChart(pres.ChartType.bar, [
 card(s, M + 7.6, 1.6, 4.3, 4.3, THEME.colors.lt2, 'finding card')
 s.addText('21.5%', { x: M + 7.9, y: 1.9, w: 3.7, h: 0.9, fontSize: 50, bold: true,
   color: THEME.colors.accent3, isTextBox: true, margin: 0 })
-s.addText('of green wasted at Indian traffic mixes', { x: M + 7.9, y: 2.8, w: 3.7, h: 0.55,
+s.addText('of the green light is wasted', { x: M + 7.9, y: 2.8, w: 3.7, h: 0.55,
   fontSize: 14, color: C.text2, isTextBox: true, margin: 0 })
 s.addText(
-  'Held green after the queue has already cleared. Those seconds are taken from the ' +
-  'cross street.\n\n' +
-  'Our model reproduces the textbook figure for cars exactly, so it departs from ' +
-  'convention only where lane discipline does.',
+  'The road stays green after its queue has gone. Those seconds come straight out ' +
+  'of the cross street.\n\n' +
+  'For cars, our model gives exactly the textbook answer. It only disagrees where ' +
+  'lane discipline breaks down.',
   { x: M + 7.9, y: 3.45, w: 3.7, h: 2.2, fontSize: 13, color: C.text2,
     isTextBox: true, margin: 0 })
 
@@ -217,24 +217,24 @@ s = pres.addSlide({ masterName: 'DARK_CONTENT', sectionTitle: 'Deck' })
 s.addText('We found the flaw in our own fix', { placeholder: 'title' })
 
 card(s, M, 1.65, 5.7, 4.3, '2B1A17', 'problem card')
-s.addText('Correcting the measure was not enough', { x: M + 0.35, y: 1.9, w: 5.0, h: 0.5,
+s.addText('Fixing the measurement was not enough', { x: M + 0.35, y: 1.9, w: 5.0, h: 0.5,
   fontSize: 17, bold: true, color: THEME.colors.accent3, isTextBox: true, margin: 0 })
 s.addText(
-  'Optimising green-seconds-per-vehicle treats a scooter road as cheap, so it scored ' +
-  'badly on the very thing being maximised.\n\n' +
-  'It starved that road: 184 ticks of waiting — minutes — falling on the riders least ' +
-  'able to absorb it.',
+  'Measuring green-seconds per vehicle makes a scooter road look cheap, so it scored ' +
+  'badly on the very thing we were maximising.\n\n' +
+  'It left that road red for 184 ticks. Minutes. And the people waiting were the ' +
+  'ones who could least afford to.',
   { x: M + 0.35, y: 2.45, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
 card(s, M + 6.2, 1.65, 5.7, 4.3, '1C2418', 'fix card')
-s.addText('So we changed what we optimise', { x: M + 6.55, y: 1.9, w: 5.0, h: 0.5,
+s.addText('So we changed what we aimed at', { x: M + 6.55, y: 1.9, w: 5.0, h: 0.5,
   fontSize: 17, bold: true, color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText(
-  'Road efficiency is a constraint, not the goal. The controller now scores each ' +
-  'road by people moved per second of green, with a fairness term on accumulated ' +
-  'red time.\n\n' +
-  'Worst-case waiting fell from 184 ticks to 37 — a five-fold cut.',
+  'Efficiency is not the goal, it is a limit. We now score each road by how many ' +
+  'people it moves per second of green, plus a fairness term for how long it has ' +
+  'been kept waiting.\n\n' +
+  'The worst wait dropped from 184 ticks to 37.',
   { x: M + 6.55, y: 2.45, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
@@ -272,7 +272,7 @@ s.addChart(pres.ChartType.bar, [
   titleColor: '57534B', titleFontSize: 13, titleFontFace: '+mn-lt', valAxisMaxVal: 215,
 })
 
-s.addText('+1,911 ± 848 more people moved than what is deployed today — and no road left starving',
+s.addText('1,911 more people moved than today\u2019s method (±848), and no road left starving',
   { x: M, y: 5.85, w: W - 2 * M, h: 0.45, fontSize: 15, bold: true, italic: true,
     color: C.text1, align: 'center', isTextBox: true, margin: 0 })
 
@@ -288,13 +288,13 @@ card(s, M, 1.6, W - 2 * M, 1.35, '16161A', 'command card')
 s.addText('python scripts/reproduce_results.py', {
   x: M + 0.4, y: 1.82, w: 8.0, h: 0.5, fontSize: 20, bold: true,
   fontFace: 'Consolas', color: THEME.colors.accent2, isTextBox: true, margin: 0 })
-s.addText('Re-measures every documented claim and exits non-zero if one has stopped being true.',
+s.addText('Re-runs every number in our docs. If one stops being true, the build fails.',
   { x: M + 0.4, y: 2.34, w: 11.0, h: 0.45, fontSize: 14, color: THEME.colors.accent5,
     isTextBox: true, margin: 0 })
 
 const stats = [['10/10', 'claims reproduced', THEME.colors.accent2],
-               ['122', 'automated tests', C.text1],
-               ['15', 'controllers benchmarked', C.text1]]
+               ['130', 'automated tests', C.text1],
+               ['16', 'controllers benchmarked', C.text1]]
 stats.forEach((st, i) => {
   const x = M + i * 4.0
   s.addText(st[0], { x, y: 3.25, w: 3.7, h: 0.8, fontSize: 44, bold: true, color: st[2],
@@ -307,9 +307,9 @@ card(s, M, 4.65, W - 2 * M, 1.5, THEME.colors.lt2, 'limits card')
 s.addText('What we are not claiming', { x: M + 0.35, y: 4.82, w: 11.2, h: 0.4,
   fontSize: 15, bold: true, color: C.text1, isTextBox: true, margin: 0 })
 s.addText(
-  'Discharge parameters are estimates, not measurements from a real junction. It moves ' +
-  'more people but fewer vehicles, which is a policy choice. And where every road carries ' +
-  'the same traffic it is measurably behind the conventional controller.',
+  'Our discharge numbers are estimates, not measurements from a real junction. We move ' +
+  'more people but fewer vehicles, and which of those a city wants is their call. And ' +
+  'when every road carries the same mix, we are actually behind the conventional one.',
   { x: M + 0.35, y: 5.22, w: 11.2, h: 0.8, fontSize: 13, color: C.text2,
     isTextBox: true, margin: 0 })
 
@@ -321,9 +321,9 @@ s.addNotes(
 s = pres.addSlide({ masterName: 'DARK_TITLE', sectionTitle: 'Deck' })
 s.addText('Measure the right thing', { placeholder: 'title' })
 s.addText(
-  'Control theory imported from the West assumes lane discipline. We modelled lane-less ' +
-  'traffic from physics, showed the standard method mis-allocates green by 21%, and fixed ' +
-  'the equity problem that correction created.',
+  'Signal control was designed for traffic that queues in lanes. Ours is not like that. ' +
+  'We worked out how Indian traffic really clears a junction, found the standard method ' +
+  'wastes a fifth of the green, then fixed the unfairness our own fix introduced.',
   { placeholder: 'body' })
 card(s, M, 4.9, 6.6, 1.1, THEME.colors.dk2, 'team card')
 s.addText('Rishab CV · 24BCE5296       Martin Wills · 24BCE5255', {
