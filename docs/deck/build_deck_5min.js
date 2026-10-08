@@ -197,14 +197,14 @@ s.addChart(pres.ChartType.bar, [
 card(s, M + 7.6, 1.6, 4.3, 4.3, THEME.colors.lt2, 'finding card')
 s.addText('21.5%', { x: M + 7.9, y: 1.9, w: 3.7, h: 0.9, fontSize: 50, bold: true,
   color: THEME.colors.accent3, isTextBox: true, margin: 0 })
-s.addText('of green wasted at Indian traffic mixes', { x: M + 7.9, y: 2.8, w: 3.7, h: 0.6,
+s.addText('of green wasted at Indian traffic mixes', { x: M + 7.9, y: 2.8, w: 3.7, h: 0.55,
   fontSize: 14, color: C.text2, isTextBox: true, margin: 0 })
 s.addText(
   'Held green after the queue has already cleared. Those seconds are taken from the ' +
   'cross street.\n\n' +
   'Our model reproduces the textbook figure for cars exactly, so it departs from ' +
   'convention only where lane discipline does.',
-  { x: M + 7.9, y: 3.25, w: 3.7, h: 2.4, fontSize: 13, color: C.text2,
+  { x: M + 7.9, y: 3.45, w: 3.7, h: 2.2, fontSize: 13, color: C.text2,
     isTextBox: true, margin: 0 })
 
 s.addNotes(
@@ -217,7 +217,7 @@ s = pres.addSlide({ masterName: 'DARK_CONTENT', sectionTitle: 'Deck' })
 s.addText('We found the flaw in our own fix', { placeholder: 'title' })
 
 card(s, M, 1.65, 5.7, 4.3, '2B1A17', 'problem card')
-s.addText('Correcting the measure was not enough', { x: M + 0.35, y: 1.9, w: 5.0, h: 0.75,
+s.addText('Correcting the measure was not enough', { x: M + 0.35, y: 1.9, w: 5.0, h: 0.5,
   fontSize: 17, bold: true, color: THEME.colors.accent3, isTextBox: true, margin: 0 })
 s.addText(
   'Optimising green-seconds-per-vehicle treats a scooter road as cheap, so it scored ' +
@@ -228,7 +228,7 @@ s.addText(
     isTextBox: true, margin: 0 })
 
 card(s, M + 6.2, 1.65, 5.7, 4.3, '1C2418', 'fix card')
-s.addText('So we changed what we optimise', { x: M + 6.55, y: 1.9, w: 5.0, h: 0.75,
+s.addText('So we changed what we optimise', { x: M + 6.55, y: 1.9, w: 5.0, h: 0.5,
   fontSize: 17, bold: true, color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText(
   'Road efficiency is a constraint, not the goal. The controller now scores each ' +
