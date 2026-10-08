@@ -24,10 +24,20 @@ const THEME = {
   headFontFace: 'Cambria',
   bodyFontFace: 'Calibri',
   colors: {
-    dk1: '0E1620', lt1: 'FFFFFF', dk2: '1B2A3A', lt2: 'EEF3F7',
-    accent1: 'FFB347', accent2: '3CE87C', accent3: 'FF5A5A',
-    accent4: '8FD8FF', accent5: '94A7B8', accent6: 'C9A227',
-    hlink: '8FD8FF', folHlink: '94A7B8',
+    /* Warm graphite rather than navy, and signal amber as the one accent.
+       The navy-and-cyan pairing is the giveaway of a template; this palette
+       belongs to the subject -- asphalt at night, lit by a signal head. */
+    dk1: '16161A',   // asphalt
+    lt1: 'F2EFE9',   // warm paper, not pure white
+    dk2: '21222A',   // raised surface
+    lt2: 'E4E0D8',   // panel on paper
+    accent1: 'E8A33D',   // signal amber -- dominant
+    accent2: '6AA84F',   // signal green, muted not neon
+    accent3: 'C8503F',   // signal red, brick not neon
+    accent4: 'A8A398',   // warm grey; the old cyan is gone entirely
+    accent5: '8C887F',   // muted label
+    accent6: 'B0883C',
+    hlink: 'E8A33D', folHlink: '8C887F',
   },
 }
 
@@ -83,14 +93,14 @@ function signalHead(slide, x, y, lit, scale = 1) {
   const d = 0.26 * scale, gap = 0.33 * scale
   slide.addShape(pres.ShapeType.roundRect, {
     x, y, w: d + 0.22 * scale, h: gap * 3 + 0.16 * scale,
-    fill: { color: '09111A' }, line: { color: '24323F', width: 1 },
-    rectRadius: 0.06, objectName: 'signal housing',
+    fill: { color: '111115' }, line: { color: '24323F', width: 1 },
+    rectRadius: 0.02, objectName: 'signal housing',
   })
   ;[THEME.colors.accent3, THEME.colors.accent1, THEME.colors.accent2].forEach((col, i) => {
     slide.addShape(pres.ShapeType.ellipse, {
       x: x + 0.11 * scale, y: y + 0.08 * scale + i * gap, w: d, h: d,
-      fill: { color: i === lit ? col : '1B2730' },
-      line: { color: i === lit ? col : '22303C', width: 1 },
+      fill: { color: i === lit ? col : '26262C' },
+      line: { color: i === lit ? col : '2E2E34', width: 1 },
       objectName: `lamp ${i}`,
     })
   })
@@ -99,7 +109,7 @@ function signalHead(slide, x, y, lit, scale = 1) {
 function card(slide, x, y, w, h, fill, name) {
   slide.addShape(pres.ShapeType.roundRect, {
     x, y, w, h, fill: { color: fill }, line: { color: fill, width: 0 },
-    rectRadius: 0.08, objectName: name,
+    rectRadius: 0.02, objectName: name,
   })
 }
 
@@ -110,7 +120,7 @@ const chartBase = {
   catAxisLabelFontFace: '+mn-lt', valAxisLabelFontFace: '+mn-lt',
   dataLabelFontFace: '+mn-lt', dataLabelFontSize: 11,
   valAxisMinVal: 0,
-  catGridLine: { style: 'none' }, valGridLine: { color: 'DCE4EB', size: 1 },
+  catGridLine: { style: 'none' }, valGridLine: { color: 'D6D1C7', size: 1 },
 }
 
 /* ====================================================== 1. title (0:00) === */
@@ -147,7 +157,7 @@ s.addText(
   { x: M + 0.35, y: 2.5, w: 5.0, h: 2.8, fontSize: 15, color: C.background1,
     isTextBox: true, margin: 0 })
 
-card(s, M + 6.15, 1.7, 5.75, 3.9, '2A2015', 'reality card')
+card(s, M + 6.15, 1.7, 5.75, 3.9, '2A2114', 'reality card')
 s.addText('What an Indian junction does', { x: M + 6.5, y: 1.95, w: 5.0, h: 0.4,
   fontSize: 17, bold: true, color: THEME.colors.accent1, isTextBox: true, margin: 0 })
 s.addText(
@@ -176,11 +186,11 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M, y: 1.6, w: 7.3, h: 4.3,
   barDir: 'col', barGrouping: 'clustered',
   chartColors: [THEME.colors.accent5, THEME.colors.accent1],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
   dataLabelFormatCode: '0.00',
-  showLegend: true, legendPos: 'b', legendColor: '44525F', legendFontSize: 11,
+  showLegend: true, legendPos: 'b', legendColor: '57534B', legendFontSize: 11,
   legendFontFace: '+mn-lt',
-  showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '44525F',
+  showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '57534B',
   titleFontSize: 13, titleFontFace: '+mn-lt', valAxisMaxVal: 3.2,
 })
 
@@ -206,7 +216,7 @@ s.addNotes(
 s = pres.addSlide({ masterName: 'DARK_CONTENT', sectionTitle: 'Deck' })
 s.addText('We found the flaw in our own fix', { placeholder: 'title' })
 
-card(s, M, 1.65, 5.7, 4.3, '2A1518', 'problem card')
+card(s, M, 1.65, 5.7, 4.3, '2B1A17', 'problem card')
 s.addText('Correcting the measure was not enough', { x: M + 0.35, y: 1.9, w: 5.0, h: 0.75,
   fontSize: 17, bold: true, color: THEME.colors.accent3, isTextBox: true, margin: 0 })
 s.addText(
@@ -217,7 +227,7 @@ s.addText(
   { x: M + 0.35, y: 2.45, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
-card(s, M + 6.2, 1.65, 5.7, 4.3, '13301F', 'fix card')
+card(s, M + 6.2, 1.65, 5.7, 4.3, '1C2418', 'fix card')
 s.addText('So we changed what we optimise', { x: M + 6.55, y: 1.9, w: 5.0, h: 0.75,
   fontSize: 17, bold: true, color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText(
@@ -244,8 +254,8 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M, y: 1.6, w: 6.1, h: 4.1,
   barDir: 'col',
   chartColors: [THEME.colors.accent5, THEME.colors.accent3, THEME.colors.accent2],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
-  showTitle: true, title: 'People moved', titleColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
+  showTitle: true, title: 'People moved', titleColor: '57534B',
   titleFontSize: 13, titleFontFace: '+mn-lt', valAxisMaxVal: 46000,
 })
 
@@ -257,9 +267,9 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M + 6.4, y: 1.6, w: 5.5, h: 4.1,
   barDir: 'col',
   chartColors: [THEME.colors.accent5, THEME.colors.accent3, THEME.colors.accent2],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
   showTitle: true, title: 'Worst approach wait (ticks) — lower is better',
-  titleColor: '44525F', titleFontSize: 13, titleFontFace: '+mn-lt', valAxisMaxVal: 215,
+  titleColor: '57534B', titleFontSize: 13, titleFontFace: '+mn-lt', valAxisMaxVal: 215,
 })
 
 s.addText('+1,911 ± 848 more people moved than what is deployed today — and no road left starving',
@@ -274,10 +284,10 @@ s.addNotes(
 s = pres.addSlide({ masterName: 'LIGHT_CONTENT', sectionTitle: 'Deck' })
 s.addText('Every number re-runs on demand', { placeholder: 'title' })
 
-card(s, M, 1.6, W - 2 * M, 1.35, '0E1620', 'command card')
+card(s, M, 1.6, W - 2 * M, 1.35, '16161A', 'command card')
 s.addText('python scripts/reproduce_results.py', {
   x: M + 0.4, y: 1.82, w: 8.0, h: 0.5, fontSize: 20, bold: true,
-  fontFace: 'Courier New', color: THEME.colors.accent2, isTextBox: true, margin: 0 })
+  fontFace: 'Consolas', color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText('Re-measures every documented claim and exits non-zero if one has stopped being true.',
   { x: M + 0.4, y: 2.34, w: 11.0, h: 0.45, fontSize: 14, color: THEME.colors.accent5,
     isTextBox: true, margin: 0 })

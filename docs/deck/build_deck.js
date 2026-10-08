@@ -23,18 +23,20 @@ const THEME = {
   headFontFace: 'Cambria',
   bodyFontFace: 'Calibri',
   colors: {
-    dk1: '0E1620',  // night asphalt
-    lt1: 'FFFFFF',
-    dk2: '1B2A3A',  // raised panel
-    lt2: 'EEF3F7',
-    accent1: 'FFB347',  // signal amber — the dominant accent
-    accent2: '3CE87C',  // go green
-    accent3: 'FF5A5A',  // stop red
-    accent4: '8FD8FF',  // ice blue
-    accent5: '94A7B8',  // muted label
-    accent6: 'C9A227',  // lane paint
-    hlink: '8FD8FF',
-    folHlink: '94A7B8',
+    /* Warm graphite rather than navy, and signal amber as the one accent.
+       The navy-and-cyan pairing is the giveaway of a template; this palette
+       belongs to the subject -- asphalt at night, lit by a signal head. */
+    dk1: '16161A',   // asphalt
+    lt1: 'F2EFE9',   // warm paper, not pure white
+    dk2: '21222A',   // raised surface
+    lt2: 'E4E0D8',   // panel on paper
+    accent1: 'E8A33D',   // signal amber -- dominant
+    accent2: '6AA84F',   // signal green, muted not neon
+    accent3: 'C8503F',   // signal red, brick not neon
+    accent4: 'A8A398',   // warm grey; the old cyan is gone entirely
+    accent5: '8C887F',   // muted label
+    accent6: 'B0883C',
+    hlink: 'E8A33D', folHlink: '8C887F',
   },
 }
 
@@ -108,15 +110,15 @@ function signalHead(slide, x, y, lit, scale = 1) {
   const gap = 0.33 * scale
   slide.addShape(pres.ShapeType.roundRect, {
     x, y, w: d + 0.22 * scale, h: gap * 3 + 0.16 * scale,
-    fill: { color: '09111A' }, line: { color: '24323F', width: 1 },
-    rectRadius: 0.06, objectName: 'signal housing',
+    fill: { color: '111115' }, line: { color: '24323F', width: 1 },
+    rectRadius: 0.02, objectName: 'signal housing',
   })
   const colors = [THEME.colors.accent3, THEME.colors.accent1, THEME.colors.accent2]
   colors.forEach((col, i) => {
     slide.addShape(pres.ShapeType.ellipse, {
       x: x + 0.11 * scale, y: y + 0.08 * scale + i * gap, w: d, h: d,
-      fill: { color: i === lit ? col : '1B2730' },
-      line: { color: i === lit ? col : '22303C', width: 1 },
+      fill: { color: i === lit ? col : '26262C' },
+      line: { color: i === lit ? col : '2E2E34', width: 1 },
       objectName: `lamp ${i}`,
     })
   })
@@ -138,7 +140,7 @@ function stat(slide, x, y, w, value, label, color, sub) {
 function card(slide, x, y, w, h, fill, name) {
   slide.addShape(pres.ShapeType.roundRect, {
     x, y, w, h, fill: { color: fill }, line: { color: fill, width: 0 },
-    rectRadius: 0.08, objectName: name,
+    rectRadius: 0.02, objectName: name,
   })
 }
 
@@ -154,7 +156,7 @@ const chartBase = {
   dataLabelFontSize: 11,
   valAxisMinVal: 0,
   catGridLine: { style: 'none' },
-  valGridLine: { color: 'DCE4EB', size: 1 },
+  valGridLine: { color: 'D6D1C7', size: 1 },
 }
 
 /* ============================================================== 1. title === */
@@ -219,7 +221,7 @@ s.addText([
 ], { x: M + 0.3, y: 2.35, w: 5.2, h: 3.5, fontSize: 15, color: C.background1,
   paraSpaceAfter: 10, isTextBox: true, margin: 0 })
 
-card(s, M + 6.1, 1.55, 5.8, 4.6, '2A2015', 'ours card')
+card(s, M + 6.1, 1.55, 5.8, 4.6, '2A2114', 'ours card')
 s.addText('Ours', {
   x: M + 6.6, y: 1.8, w: 5.4, h: 0.4, fontSize: 16, bold: true,
   color: THEME.colors.accent1, isTextBox: true, margin: 0 })
@@ -257,11 +259,11 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M, y: 1.6, w: 7.3, h: 4.3,
   barDir: 'col', barGrouping: 'clustered',
   chartColors: [THEME.colors.accent5, THEME.colors.accent1],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
   dataLabelFormatCode: '0.00',
-  showLegend: true, legendPos: 'b', legendColor: '44525F', legendFontSize: 11,
+  showLegend: true, legendPos: 'b', legendColor: '57534B', legendFontSize: 11,
   legendFontFace: '+mn-lt',
-  showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '44525F',
+  showTitle: true, title: 'Car-equivalents per vehicle', titleColor: '57534B',
   titleFontSize: 13, titleFontFace: '+mn-lt',
   valAxisMaxVal: 3.2,
 })
@@ -295,8 +297,8 @@ s.addChart(pres.ChartType.line, [{
   ...chartBase, x: M, y: 1.6, w: 7.6, h: 4.2,
   chartColors: [THEME.colors.accent3],
   lineSize: 4, lineSmooth: true,
-  showValue: true, dataLabelPosition: 't', dataLabelColor: '44525F',
-  showTitle: true, title: 'Two-wheeler share of the queue', titleColor: '44525F',
+  showValue: true, dataLabelPosition: 't', dataLabelColor: '57534B',
+  showTitle: true, title: 'Two-wheeler share of the queue', titleColor: '57534B',
   titleFontSize: 13, titleFontFace: '+mn-lt',
 })
 
@@ -334,11 +336,11 @@ const attempts = [
 ]
 attempts.forEach((a, i) => {
   const y = 1.6 + i * 1.22
-  card(s, M, y, W - 2 * M, 1.05, i === 3 ? '13301F' : THEME.colors.dk2, `attempt ${a[0]}`)
+  card(s, M, y, W - 2 * M, 1.05, i === 3 ? '1C2418' : THEME.colors.dk2, `attempt ${a[0]}`)
   s.addShape(pres.ShapeType.ellipse, { x: M + 0.3, y: y + 0.26, w: 0.52, h: 0.52,
     fill: { color: a[3] }, line: { color: a[3], width: 0 }, objectName: `badge ${a[0]}` })
   s.addText(a[0], { x: M + 0.3, y: y + 0.3, w: 0.52, h: 0.45, fontSize: 18, bold: true,
-    color: '0E1620', align: 'center', isTextBox: true, margin: 0 })
+    color: '16161A', align: 'center', isTextBox: true, margin: 0 })
   s.addText(a[1], { x: M + 1.05, y: y + 0.17, w: 3.3, h: 0.4, fontSize: 16, bold: true,
     color: C.background1, isTextBox: true, margin: 0 })
   s.addText(a[2], { x: M + 4.45, y: y + 0.17, w: W - 2 * M - 4.75, h: 0.75, fontSize: 13,
@@ -362,8 +364,8 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M, y: 1.6, w: 6.1, h: 4.2,
   barDir: 'col',
   chartColors: [THEME.colors.accent5, THEME.colors.accent3, THEME.colors.accent2],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
-  showTitle: true, title: 'People moved', titleColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
+  showTitle: true, title: 'People moved', titleColor: '57534B',
   titleFontSize: 13, titleFontFace: '+mn-lt',
   valAxisMaxVal: 46000,
 })
@@ -375,9 +377,9 @@ s.addChart(pres.ChartType.bar, [
   ...chartBase, x: M + 6.4, y: 1.6, w: 5.5, h: 4.2,
   barDir: 'col',
   chartColors: [THEME.colors.accent5, THEME.colors.accent3, THEME.colors.accent2],
-  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '44525F',
+  showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: '57534B',
   showTitle: true, title: 'Worst approach wait (ticks) — lower is better',
-  titleColor: '44525F', titleFontSize: 13, titleFontFace: '+mn-lt',
+  titleColor: '57534B', titleFontSize: 13, titleFontFace: '+mn-lt',
   valAxisMaxVal: 215,
 })
 
@@ -393,7 +395,7 @@ s.addNotes(
 s = pres.addSlide({ masterName: 'DARK_CONTENT', sectionTitle: 'Results' })
 s.addText('We found the flaw in our own fix', { placeholder: 'title' })
 
-card(s, M, 1.6, 5.7, 4.3, '2A1518', 'problem card')
+card(s, M, 1.6, 5.7, 4.3, '2B1A17', 'problem card')
 s.addText('The problem', { x: M + 0.35, y: 1.85, w: 5.0, h: 0.4, fontSize: 17, bold: true,
   color: THEME.colors.accent3, isTextBox: true, margin: 0 })
 s.addText(
@@ -404,7 +406,7 @@ s.addText(
   { x: M + 0.35, y: 2.35, w: 5.0, h: 3.2, fontSize: 14, color: C.background1,
     isTextBox: true, margin: 0 })
 
-card(s, M + 6.2, 1.6, 5.7, 4.3, '13301F', 'fix card')
+card(s, M + 6.2, 1.6, 5.7, 4.3, '1C2418', 'fix card')
 s.addText('The fix', { x: M + 6.55, y: 1.85, w: 5.0, h: 0.4, fontSize: 17, bold: true,
   color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText(
@@ -483,10 +485,10 @@ s.addNotes('Keep this brisk — 30 seconds. It is table stakes, not the headline
 s = pres.addSlide({ masterName: 'LIGHT_CONTENT', sectionTitle: 'Deployability' })
 s.addText('Every number in this deck re-runs on demand', { placeholder: 'title' })
 
-card(s, M, 1.6, W - 2 * M, 1.5, '0E1620', 'command card')
+card(s, M, 1.6, W - 2 * M, 1.5, '16161A', 'command card')
 s.addText('python scripts/reproduce_results.py', {
   x: M + 0.4, y: 1.85, w: 8.0, h: 0.5, fontSize: 20, bold: true,
-  fontFace: 'Courier New', color: THEME.colors.accent2, isTextBox: true, margin: 0 })
+  fontFace: 'Consolas', color: THEME.colors.accent2, isTextBox: true, margin: 0 })
 s.addText('Re-measures every documented claim and exits non-zero if one has stopped being true.',
   { x: M + 0.4, y: 2.4, w: 11.0, h: 0.5, fontSize: 14, color: THEME.colors.accent5,
     isTextBox: true, margin: 0 })
