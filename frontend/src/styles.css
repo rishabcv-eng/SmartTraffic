@@ -447,3 +447,150 @@
 .sense-key i.dash{background:repeating-linear-gradient(90deg,#8fd8ff 0 5px,transparent 5px 9px)}
 .ops-tabs button:nth-last-child(2){border-color:#7a5a2a;color:#ffc87a}
 .ops-tabs button:nth-last-child(2).sel{background:#2a2015;border-color:#c9893a;color:#ffd9a0}
+
+
+/* ==========================================================================
+   DESIGN PASS — away from the generated-dashboard default
+   ==========================================================================
+   The page had the three tells of a machine-made dashboard: a navy ground with
+   a cyan accent, every surface a soft 14-18px rounded card, and glowing
+   gradient numerals. This pass replaces that with the language the subject
+   actually belongs to — a transport engineer's instrument panel and report.
+
+   - Ground is warm graphite, the colour of asphalt at night, not navy.
+   - One accent: signal amber. Cyan is removed entirely; it was the loudest tell.
+   - Corners go from 14-18px to 2-3px. Hairline rules replace card outlines.
+   - Headings are set in a serif, data in a monospace with tabular figures,
+     labels in wide-tracked small uppercase. Reading a number off this page
+     should feel like reading an instrument.
+   - Glow survives only where it is literal: the signal lamps.
+   ========================================================================== */
+
+:root{
+  --ink:#16161a;         /* asphalt */
+  --ink-2:#1d1e23;       /* raised surface */
+  --ink-3:#26272d;       /* hairline */
+  --paper:#e9e6df;       /* warm off-white, not pure #fff */
+  --muted:#9b9890;
+  --muted-2:#75736d;
+  --amber:#e8a33d;       /* signal amber — the one accent */
+  --amber-dim:#8a6526;
+  --go:#6aa84f;          /* signal green, muted rather than neon */
+  --stop:#c8503f;        /* signal red, brick rather than neon */
+  --mono:'Cascadia Mono','Consolas','SF Mono',ui-monospace,monospace;
+  --serif:'Iowan Old Style','Palatino Linotype',Georgia,serif;
+}
+
+:root, body{
+  background:var(--ink) !important;
+  color:var(--paper);
+  font-family:'Segoe UI',system-ui,sans-serif;
+}
+body{background-image:none !important}
+
+/* --- type ---------------------------------------------------------------- */
+h1,h2,h3,.hero h1,.ops-head h2,.ops-panel-head h3{
+  font-family:var(--serif);
+  font-weight:600;
+  letter-spacing:-.012em;
+}
+.hero h1{line-height:1.08}
+.eyebrow,.ops-stat span,.metric span,.d-label,.chn span,.finding h3,
+.ops-table th,.sense-key{
+  font-family:'Segoe UI',system-ui,sans-serif;
+}
+.eyebrow,.d-label,.ops-stat span,.metric span,.chn span,.ops-table th{
+  text-transform:uppercase;letter-spacing:.13em;font-size:.63rem;
+  color:var(--muted-2) !important;font-weight:600;
+}
+
+/* Every figure on the page is set as instrument data. */
+.finding strong,.ops-stat strong,.metric strong,.d-mid strong,.d-side strong,
+.chn strong,.ck strong,.ops-table td,.fleet-bar strong,.imp strong,.fps{
+  font-family:var(--mono);
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;
+}
+
+/* --- surfaces: hairlines, not pillows ------------------------------------ */
+.sim-card,.metric,.explain,.ops-panel,.finding,.ev-bar,.chennai,.corr,
+.ops-junction,.ops-stat,.queue-strip span,.chn,.ck,.delta-strip,.impact,
+.fleet-bars,.ops-assumptions,.ops-csv,.demo-card{
+  border-radius:3px !important;
+  background:var(--ink-2) !important;
+  border:1px solid var(--ink-3) !important;
+  box-shadow:none !important;
+}
+.finding{background:var(--ink-2) !important}
+.finding.accent{background:#1b1f1a !important;border-color:#33402c !important}
+.ops-panel,.explain,.chennai,.ev-bar,.impact{background:#1a1b20 !important}
+.twin,.corr-canvas{border-radius:2px !important}
+
+/* --- the one accent ------------------------------------------------------ */
+.eyebrow{color:var(--amber) !important}
+.finding strong{color:var(--amber) !important}
+.finding.accent strong{color:var(--go) !important}
+.hero-status{border-color:var(--ink-3) !important;color:var(--muted) !important;
+  border-radius:2px !important;font-family:var(--mono);font-size:.7rem;
+  text-transform:uppercase;letter-spacing:.1em}
+.ops-tabs button{border-radius:2px !important;border-color:var(--ink-3) !important;
+  background:transparent !important;color:var(--muted) !important;
+  text-transform:uppercase;letter-spacing:.09em;font-size:.68rem;font-weight:600}
+.ops-tabs button.sel{background:var(--ink-3) !important;color:var(--paper) !important;
+  border-color:var(--amber-dim) !important}
+.ops-tabs button:nth-last-child(2),.ops-tabs button:last-child{
+  color:var(--amber) !important;border-color:var(--amber-dim) !important}
+.ops-tabs button:nth-last-child(2).sel,.ops-tabs button:last-child.sel{
+  background:#2a2114 !important;color:var(--amber) !important}
+
+.controls button,.controls select,.ops-panel button,.ops-panel select,
+.ops-form button,.findings-jump,.ev-chip,.tour-btn{
+  border-radius:2px !important;background:var(--ink-2) !important;
+  border:1px solid var(--ink-3) !important;color:var(--paper) !important}
+.controls button:hover,.ops-panel button:hover:not(:disabled),.findings-jump:hover{
+  border-color:var(--amber-dim) !important;color:var(--amber) !important}
+.findings-jump{color:var(--amber) !important}
+.ev-go{background:var(--stop) !important;border:1px solid var(--stop) !important;
+  border-radius:2px !important;box-shadow:none !important}
+
+/* --- readouts ------------------------------------------------------------ */
+.d-mid strong{text-shadow:none !important;color:var(--paper) !important}
+.d-mid strong.good{color:var(--go) !important}
+.d-mid strong.bad{color:var(--stop) !important}
+.d-side.win strong{color:var(--go) !important}
+.d-side.lose strong{color:var(--stop) !important}
+.sim-card.baseline{border-top:2px solid var(--muted-2) !important}
+.sim-card.smart{border-top:2px solid var(--amber) !important}
+.sim-card.leading{border-color:var(--amber-dim) !important}
+.ops-stat.good strong{color:var(--go) !important}
+.ops-stat.warn strong{color:var(--amber) !important}
+.ops-table .good{color:var(--go) !important}
+.ops-table .bad{color:var(--stop) !important}
+.ops-banner{border-radius:2px !important;background:#2a1a17 !important;
+  border-color:#5e3228 !important;color:#e8b4a8 !important}
+
+/* The tug bar becomes a gauge rather than a glowing pill. */
+.tug-track{height:4px;border-radius:0;background:var(--ink-3)}
+.tug-fill{border-radius:0;background:var(--amber);box-shadow:none}
+.tug-track::after{background:var(--muted-2)}
+
+/* Hairline rule under section headings, which a report would have. */
+.ops-head{border-bottom:1px solid var(--ink-3);padding-bottom:10px}
+.findings-head{border-bottom:1px solid var(--ink-3);padding-bottom:9px}
+
+/* Restrained hover: a border, not a lift and a halo. */
+.finding:hover,.demo-card:hover,.ops-stat:hover{
+  transform:none !important;box-shadow:none !important;
+  border-color:var(--amber-dim) !important}
+.hero::after{display:none}          /* the drifting bloom was decoration */
+
+.fps{border-radius:2px !important}
+.fps.good{background:transparent;color:var(--go);border:1px solid #3c5133}
+.fps.warn{background:transparent;color:var(--amber);border:1px solid var(--amber-dim)}
+.fps.bad{background:transparent;color:var(--stop);border:1px solid #5e3228}
+
+/* Charts inherit the accent rather than the old cyan. */
+.tsd-traj{stroke:var(--amber)}
+.tsd-green{fill:rgba(106,168,79,.28);stroke:#3c5133}
+.fleet-bar-fill{background:var(--amber);border-radius:0}
+.fleet-bar strong{color:var(--amber)}

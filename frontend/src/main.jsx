@@ -133,6 +133,7 @@ function CountUp({ value, decimals = 0, prefix = '', suffix = '', duration = 110
     const el = ref.current
     if (!el) return
     let raf = 0
+    let settle = 0
     const io = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting) return
       io.disconnect()
@@ -145,9 +146,29 @@ function CountUp({ value, decimals = 0, prefix = '', suffix = '', duration = 110
         else setShown(value)
       }
       raf = requestAnimationFrame(tick)
+      // A stalled frame loop -- a background tab, a throttled window -- would
+      // otherwise leave the figure frozen part way and showing a number that
+      // was never true. The display must always settle on the real value.
+      settle = setTimeout(() => { cancelAnimationFrame(raf); setShown(value) },
+                          duration + 200)
     }, { threshold: 0.4 })
     io.observe(el)
-    return () => { io.disconnect(); cancelAnimationFrame(raf) }
+
+    // Last line of defence: if the observer never fires at all -- the element
+    // never scrolled into view, rendering was throttled the whole time -- the
+    // figure would otherwise sit at zero, which is a wrong number presented as
+    // a real one. Showing the true value unanimated is always better.
+    const floor = setTimeout(() => setShown(v => (v === 0 ? value : v)), 2500)
+
+    // Coming back to the tab should find the final figure, not a frozen one.
+    const snap = () => { if (!document.hidden) { cancelAnimationFrame(raf); setShown(value) } }
+    document.addEventListener('visibilitychange', snap)
+
+    return () => {
+      io.disconnect(); cancelAnimationFrame(raf)
+      clearTimeout(settle); clearTimeout(floor)
+      document.removeEventListener('visibilitychange', snap)
+    }
   }, [value, duration])
 
   const text = decimals
