@@ -22,6 +22,7 @@ const TABS = [
   ['whatif',    'What-if planner'],
   ['data',      'Calibration & sensing'],
   ['fleet',     'Mixed fleet (novel)'],
+  ['sensing',   'Blind detector (novel)'],
 ]
 
 const FAULTS = [
@@ -897,10 +898,107 @@ function FleetTab() {
   )
 }
 
+/* ------------------------------------------------------------ blind detector */
+
+function SensingTab() {
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [shielded, setShielded] = useState(false)
+
+  const run = () => {
+    setBusy(true); setError('')
+    api(`/api/sensing/compare?shielded=${shielded}`)
+      .then(setData).catch(e => setError(e.message)).finally(() => setBusy(false))
+  }
+
+  useEffect(() => { run() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Truth against claim, over time. The detector flatlines at zero while the
+     road behind it fills: that divergence is the entire argument. */
+  const W = 760, H = 230, PAD = 44
+  const traces = data?.traces || []
+  const steps = traces[0]?.truth.length || 1
+  const peak = Math.max(6, ...traces.flatMap(t => t.truth))
+  const x = i => PAD + (i / Math.max(1, steps - 1)) * (W - PAD - 14)
+  const y = v => H - 26 - (v / peak) * (H - 52)
+  const line = vals => vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const failX = data ? x(data.setup.fail_at_tick) : 0
+  const colours = ['#ff8f6b', '#63e29a']
+
+  return (
+    <>
+      <Panel
+        title="What happens when a camera dies"
+        blurb="A failed detector does not report an error — it reports zero. Zero is indistinguishable from an empty road, so a controller that trusts its sensors stops serving that approach entirely."
+        actions={
+          <span className="ops-inline">
+            <label className="fleet-check">
+              <input type="checkbox" checked={shielded}
+                     onChange={e => setShielded(e.target.checked)} />
+              safety shield on
+            </label>
+            <button onClick={run} disabled={busy}>{busy ? 'Running…' : 'Re-run'}</button>
+          </span>
+        }
+      >
+        <Loading error={error} busy={busy} empty={!data} />
+        {data && (
+          <>
+            <svg className="ops-tsd" viewBox={`0 0 ${W} ${H}`} role="img"
+                 aria-label="Queue behind the failed detector over time">
+              <line x1={PAD} y1={H - 26} x2={W - 14} y2={H - 26} className="tsd-axis"/>
+              <line x1={PAD} y1={14} x2={PAD} y2={H - 26} className="tsd-axis"/>
+              <text x={6} y={20} className="tsd-label">vehicles</text>
+              <text x={W - 14} y={H - 8} textAnchor="end" className="tsd-label">time →</text>
+
+              {/* the moment the detector dies */}
+              <line x1={failX} y1={14} x2={failX} y2={H - 26} className="sense-fail"/>
+              <text x={failX + 5} y={24} className="tsd-label">detector dies</text>
+
+              {traces.map((t, i) => (
+                <polyline key={t.controller} points={line(t.truth)}
+                          fill="none" stroke={colours[i]} strokeWidth="2.5"
+                          strokeLinejoin="round"/>
+              ))}
+              {/* what the detector insists is there */}
+              <polyline points={line(traces[0]?.reported || [])} fill="none"
+                        stroke="#8fd8ff" strokeWidth="2" strokeDasharray="5 4"/>
+            </svg>
+
+            <div className="sense-key">
+              <span><i style={{ background: colours[0] }}/>{traces[0]?.label} — real queue</span>
+              <span><i style={{ background: colours[1] }}/>{traces[1]?.label} — real queue</span>
+              <span><i className="dash"/>What the detector reports</span>
+            </div>
+
+            <div className="ops-stats">
+              <Stat label="Hidden queue, trusting the detector"
+                    value={`${data.headline.naive_hidden_queue} veh`} tone="warn"/>
+              <Stat label="Hidden queue, keeping a belief"
+                    value={`${data.headline.belief_hidden_queue} veh`} tone="good"/>
+              <Stat label="Reduction" value={`${data.headline.hidden_queue_reduction_pct}%`}
+                    hint="pooled over 5 seeds" tone="good"/>
+              <Stat label="Throughput given up"
+                    value={`${data.headline.throughput_cost} veh`}
+                    hint="the price of hedging"/>
+            </div>
+
+            <p className="ops-muted">{data.reading}</p>
+            <p className="ops-muted"><strong>Caveat:</strong> {data.caveat} Tick the
+              box above to see that for yourself — both lines flatten, and the
+              advantage largely disappears.</p>
+          </>
+        )}
+      </Panel>
+    </>
+  )
+}
+
 const TAB_VIEWS = {
   health: HealthTab, why: WhyTab, impact: ImpactTab, bench: BenchTab,
   wave: WaveTab, ev: EmergencyTab, whatif: WhatIfTab, data: DataTab,
-  fleet: FleetTab,
+  fleet: FleetTab, sensing: SensingTab,
 }
 
 export default function OpsConsole() {

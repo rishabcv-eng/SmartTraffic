@@ -17,6 +17,7 @@ from app.services.impact import ImpactAssumptions, compare_impact
 from app.services.runner import RunConfig, SimulationRunner
 from app.services.fleet_study import compare_fleet
 from app.services.saturation import comparison_report
+from app.services.sensing_study import compare_sensing
 from app.services.scenario import ScenarioConfig, simulate
 from app.services.single_junction import run_single_junction_comparison
 from app.services.vision import apply_corrections, detect_vehicles, detector_status, seed_engine
@@ -264,6 +265,14 @@ def comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps:
 
 
 # ----------------------------------------------------------------- green wave
+
+@app.get('/api/sensing/compare')
+def sensing_compare(seed: int = 19, steps: int = 160, noise: float = 0.14,
+                    shielded: bool = False):
+    """What happens to a road when its detector dies, with and without belief."""
+    return compare_sensing(seed=seed, steps=steps, noise=max(0.0, min(noise, 0.5)),
+                           shielded=shielded)
+
 
 @app.post('/api/fleet/compare')
 def fleet_compare(body: FleetStudyRequest):

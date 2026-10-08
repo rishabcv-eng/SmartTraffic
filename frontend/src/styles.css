@@ -436,3 +436,14 @@
 .fps.good{background:rgba(99,226,154,.14);color:#63e29a;border:1px solid #2f7d52}
 .fps.warn{background:rgba(240,194,116,.14);color:#f0c274;border:1px solid #7d6330}
 .fps.bad{background:rgba(255,90,90,.14);color:#ff8f8f;border:1px solid #7d3030}
+
+
+/* ------------------------------------------------------- blind-detector tab */
+.sense-fail{stroke:#ff6b6b;stroke-width:1.5;stroke-dasharray:4 4;opacity:.75}
+.sense-key{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;
+  font-size:.75rem;color:#8da1b3}
+.sense-key span{display:flex;align-items:center;gap:7px}
+.sense-key i{width:16px;height:3px;border-radius:2px;display:inline-block}
+.sense-key i.dash{background:repeating-linear-gradient(90deg,#8fd8ff 0 5px,transparent 5px 9px)}
+.ops-tabs button:nth-last-child(2){border-color:#7a5a2a;color:#ffc87a}
+.ops-tabs button:nth-last-child(2).sel{background:#2a2015;border-color:#c9893a;color:#ffd9a0}

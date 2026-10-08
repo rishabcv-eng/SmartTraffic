@@ -9,6 +9,8 @@ from app.models import DIRECTIONS, OCCUPANCY, JunctionState, NetworkSnapshot, Ph
 from app.services.saturation import (
     DEFAULT_LANES,
     DEFAULT_MIX,
+    OCCUPANCY_BY_KIND,
+    STORAGE_CI,
     VEHICLE_CLASSES,
     discharge_seconds,
     sample_composition,
@@ -87,10 +89,7 @@ class Vehicle:
 
     @property
     def occupancy(self) -> float:
-        cls = VEHICLE_CLASSES.get(self.kind)
-        if cls is not None:
-            return cls.occupancy
-        return OCCUPANCY.get(self.kind, OCCUPANCY['car'])
+        return OCCUPANCY_BY_KIND.get(self.kind) or OCCUPANCY.get(self.kind, OCCUPANCY['car'])
 
     @property
     def storage(self) -> float:
@@ -101,8 +100,7 @@ class Vehicle:
     @property
     def storage_ci(self) -> int:
         """The same, in exact hundredths of a car-length."""
-        cls = VEHICLE_CLASSES.get(self.kind)
-        return cls.storage_ci if cls else 100
+        return STORAGE_CI.get(self.kind, 100)
 
 
 @dataclass

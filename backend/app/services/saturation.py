@@ -94,6 +94,13 @@ DEFAULT_MIX = {'two-wheeler': 0.45, 'car': 0.33, 'auto': 0.18, 'bus': 0.04}
 WESTERN_MIX = {'car': 0.88, 'bus': 0.06, 'two-wheeler': 0.04, 'auto': 0.02}
 
 
+#: Flat lookups built once. These are read for every vehicle on every tick, and
+#: recomputing a rounded product behind two property calls each time showed up
+#: clearly in the profile.
+STORAGE_CI = {name: int(round(v.storage * 100)) for name, v in VEHICLE_CLASSES.items()}
+OCCUPANCY_BY_KIND = {name: v.occupancy for name, v in VEHICLE_CLASSES.items()}
+
+
 def discharge_seconds(kind: str, lanes: float = DEFAULT_LANES) -> float:
     """Green time one vehicle of this class consumes at the stop line."""
     v = VEHICLE_CLASSES[kind]
