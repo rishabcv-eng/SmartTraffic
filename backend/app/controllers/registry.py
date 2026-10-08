@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.controllers.actuated import ActuatedController
 from app.controllers.base import Controller
+from app.controllers.belief_pressure import BeliefPressureController
 from app.controllers.coordinated_pressure import CoordinatedPressureController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.gated_pressure import GatedPressureController
@@ -32,6 +33,7 @@ CONTROLLERS: dict[str, type[Controller]] = {
     'transit-priority-v1': TransitPriorityController,
     'gated-pressure-v1': GatedPressureController,
     'coordinated-pressure-v1': CoordinatedPressureController,
+    'belief-pressure-v1': BeliefPressureController,
     'pcu-pressure-v1': PCUPressureController,
     'heterogeneous-pressure-v1': HeterogeneousPressureController,
     'pcu-timed-v1': PCUTimedController,

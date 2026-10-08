@@ -179,3 +179,76 @@ python -m pytest tests/test_heterogeneous.py -q         # both halves of the res
 `tests/test_heterogeneous.py` pins the negative half too — that a uniform mix
 shows no significant effect. If a future change makes that test pass for the
 wrong reason, the claim in this document has quietly stopped being true.
+
+---
+
+# Control under sensing uncertainty
+
+A second thread, and the same shape of result: a real gap, a measured effect,
+and narrow conditions stated plainly.
+
+## The gap
+
+Every controller here, and effectively every one in the literature, treats the
+number coming off a detector as the truth. Harmless in a simulator where the
+count is exact. Not harmless on an arterial at 8pm in the rain, where a camera
+is counting overlapping two-wheelers through glare.
+
+The failure is specific. **A dead detector reports zero, and zero is
+indistinguishable from an empty approach.** A pressure controller sees no
+demand, never serves that road, and the queue grows behind a sensor nobody
+knows is broken.
+
+The engine now models this: readings carry error that grows with queue length,
+with weather, and with how badly the vehicle classes present occlude one
+another — two-wheelers are the hardest class to count, which is exactly the
+class this project cares about. Each reading is accompanied by a confidence
+score. **Noise is off by default**, so every earlier result is unchanged.
+
+## The controller
+
+`belief-pressure-v1` keeps a belief rather than a reading:
+
+```
+predict   x̂ ← x̂ + arrivals − discharge
+update    x̂ ← x̂ + K(z − x̂),   K = P/(P+R)
+```
+
+`R` comes from the detector's confidence, so an untrusted reading barely moves
+the belief. `P` grows every tick an approach goes unobserved.
+
+Decisions use the **upper confidence bound**, `x̂ + κ√P`, not `x̂`. That one
+choice is the whole idea: an approach we cannot see is treated as *potentially
+long* rather than *definitely empty*. Optimism would be the wrong direction —
+the costly error is assuming a road is clear when it is full.
+
+## What it buys, and what it costs
+
+Two detectors killed mid-run, 8 seeds, paired intervals, **unshielded** so the
+belief layer is isolated from the safety net:
+
+| | queue hidden behind the dead detectors |
+|---|---|
+| `coordinated-pressure-v1` | 10.1 vehicles |
+| `belief-pressure-v1` | **3.2 vehicles** |
+
+A 68% reduction, −6.9 ± 3.1, significant. Throughput cost: −14.5 vehicles out
+of ~8,900, around 0.16%.
+
+## The honest caveats
+
+**The safety shield already solves most of this.** With the shield enabled —
+the configuration a city would actually deploy — maximum green forces a switch
+before starvation gets far, and the hidden queue is near zero for *both*
+controllers. The belief layer's remaining benefit there is a 3-tick improvement
+in worst-approach wait. It reaches the same outcome by inference rather than by
+a blunt timeout, and acts on the specific approach rather than forcing a global
+switch, but it is not solving an unsolved problem.
+
+**It costs throughput when the sensors are fine.** Shielded, with perfect
+sensing, it serves about 60 fewer vehicles per run than the controller it is
+based on. Hedging against bad data is not free.
+
+**Unshielded with perfect sensors the cost is inside the noise** (−0.6 ± 2.6),
+which is worth stating because it means the cost comes from interaction with
+the shield rather than from the filter itself.

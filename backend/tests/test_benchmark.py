@@ -3,7 +3,7 @@ from app.services.benchmark import run_benchmark, run_benchmark_suite
 
 def test_benchmark_returns_comparable_results():
     results = run_benchmark(steps=20, seed=5)
-    assert len(results) == 15
+    assert len(results) == 16
     names = {r['controller'] for r in results}
     assert names == {
         'fixed-time',
@@ -20,6 +20,7 @@ def test_benchmark_returns_comparable_results():
         'pcu-timed-v1',
         'heterogeneous-timed-v1',
         'person-seconds-v1',
+        'belief-pressure-v1',
         'rl-network-v2',
     }
     assert all(r['throughput'] >= 0 for r in results)
@@ -33,7 +34,7 @@ def test_benchmark_suite_is_ranked_and_reproducible():
     a = run_benchmark_suite(steps=40, seeds=[3, 7], scenarios=['normal', 'accident'])
     b = run_benchmark_suite(steps=40, seeds=[3, 7], scenarios=['normal', 'accident'])
     assert a == b
-    assert len(a['summary']) == 15
+    assert len(a['summary']) == 16
     queues = [row['mean_average_queue'] for row in a['summary']]
     assert queues == sorted(queues)
     assert all(row['runs'] == 4 for row in a['summary'])

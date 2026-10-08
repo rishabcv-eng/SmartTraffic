@@ -33,6 +33,9 @@ class JunctionState:
     #: Per-approach vehicle mix, ``{direction: {class: count}}``. Without this
     #: a controller cannot tell a two-wheeler queue from a car queue.
     composition: dict = field(default_factory=dict)
+    #: Per-approach trust in the count, 0 to 1. A controller that ignores this
+    #: is asserting its cameras are perfect.
+    confidence: dict = field(default_factory=dict)
 
     @property
     def queue(self) -> int:

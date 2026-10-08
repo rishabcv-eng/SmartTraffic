@@ -41,6 +41,26 @@ WEATHER_CAPACITY = {
 #: Ticks a vehicle needs to travel from one junction to the next.
 LINK_TRAVEL_TICKS = 4
 
+#: How badly conditions degrade a camera count. A detector does not simply work
+#: or fail: rain, glare and darkness make it miscount, and it miscounts most
+#: where vehicles overlap. Multipliers on the base sensing error.
+WEATHER_SENSING = {
+    'clear': 1.0,
+    'rain': 1.6,
+    'heavy-rain': 2.3,
+    'fog': 2.6,
+}
+
+#: Two-wheelers are the hardest class to count: they sit in each other's
+#: shadow, straddle lanes and occlude one another. A count is less trustworthy
+#: on exactly the approaches this project cares most about.
+OCCLUSION_BY_CLASS = {
+    'two-wheeler': 1.9,
+    'auto': 1.2,
+    'car': 1.0,
+    'bus': 0.7,
+}
+
 #: How many vehicles one approach link can physically hold.
 #:
 #: This matters more than it looks. Without a storage limit, queues grow without
@@ -199,6 +219,14 @@ class MockTrafficEngine(TrafficEngine):
         # Fleet composition is configuration, not per-run state: it must
         # survive a reset, or the standing queues get rebuilt from the default
         # mix and never match the arrivals that follow.
+        #: Sensing error as a fraction of the true count. Zero by default, so
+        #: every existing result is unchanged; the observation model only comes
+        #: into play when a study asks for it.
+        self.sensor_noise = getattr(self, 'sensor_noise', 0.0)
+        #: Drawn from its own stream, so switching sensing on cannot perturb
+        #: the traffic itself and ruin a paired comparison.
+        self.sensor_rng = random.Random(seed + 10_007)
+
         self.approach_lanes = getattr(self, 'approach_lanes', DEFAULT_LANES)
         self.mix = getattr(self, 'mix', None) or dict(DEFAULT_MIX)
         #: Per-approach overrides. A systematic bias in how a controller values
@@ -367,8 +395,36 @@ class MockTrafficEngine(TrafficEngine):
 
     # -------------------------------------------------------------- observation
 
+    def sensing_quality(self, jid: str, direction: str) -> float:
+        """Confidence in this approach's count, between 0 and 1.
+
+        A real detector reports a number *and* how much it trusts it. Nothing
+        downstream of a camera should treat a count taken through heavy rain,
+        of a queue of overlapping two-wheelers, the same as a clean reading of
+        four cars -- yet every controller here historically did.
+        """
+        for fault in self.faults.values():
+            if fault['junction'] == jid and fault['direction'] == direction:
+                if fault['kind'] == 'detector-dropout':
+                    return 0.0
+                if fault['kind'] == 'detector-stuck':
+                    return 0.15
+        if self.sensor_noise <= 0:
+            return 1.0
+
+        lane = self.lanes[(jid, direction)]
+        if lane:
+            occlusion = sum(OCCLUSION_BY_CLASS.get(v.kind, 1.0) for v in lane) / len(lane)
+        else:
+            occlusion = 1.0
+        weather = WEATHER_SENSING.get(self.weather, 1.0)
+        # Error grows with the queue, the weather and how badly the classes
+        # present occlude one another.
+        error = self.sensor_noise * weather * occlusion
+        return max(0.05, min(1.0, 1.0 / (1.0 + 4.0 * error)))
+
     def _observed_queue(self, jid: str, direction: str) -> int:
-        """What the controller sees -- degraded by any active detector fault."""
+        """What the controller sees -- degraded by faults and by sensing error."""
         true_length = len(self.lanes[(jid, direction)])
         for fault in self.faults.values():
             if fault['junction'] != jid or fault['direction'] != direction:
@@ -377,7 +433,18 @@ class MockTrafficEngine(TrafficEngine):
                 return 0
             if fault['kind'] == 'detector-stuck':
                 return self.frozen_readings.get((jid, direction), true_length)
-        return true_length
+
+        if self.sensor_noise <= 0:
+            return true_length
+
+        lane = self.lanes[(jid, direction)]
+        occlusion = (sum(OCCLUSION_BY_CLASS.get(v.kind, 1.0) for v in lane) / len(lane)
+                     if lane else 1.0)
+        spread = self.sensor_noise * WEATHER_SENSING.get(self.weather, 1.0) * occlusion
+        # Miscount scales with the queue: counting 40 overlapping vehicles is
+        # far harder than counting three.
+        noisy = self.sensor_rng.gauss(true_length, spread * max(1.0, true_length))
+        return max(0, int(round(noisy)))
 
     def _junction_mode(self, jid: str) -> str:
         kinds = {f['kind'] for f in self.faults.values() if f['junction'] == jid}
@@ -596,6 +663,7 @@ class MockTrafficEngine(TrafficEngine):
                 d: sum(1 for v in self.lanes[(jid, d)] if v.kind == 'bus')
                 for d in DIRECTIONS
             }
+            confidence = {d: round(self.sensing_quality(jid, d), 3) for d in DIRECTIONS}
             composition = {}
             for d in DIRECTIONS:
                 counts: dict[str, int] = {}
@@ -616,6 +684,7 @@ class MockTrafficEngine(TrafficEngine):
                 mode=mode,
                 healthy=mode == 'adaptive',
                 composition=composition,
+                confidence=confidence,
             ))
 
         return NetworkSnapshot(
