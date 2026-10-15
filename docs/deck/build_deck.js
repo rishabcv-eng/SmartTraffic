@@ -494,7 +494,7 @@ s.addText('Re-measures every documented claim and exits non-zero if one has stop
     isTextBox: true, margin: 0 })
 
 stat(s, M, 3.4, 3.7, '10/10', 'claims reproduced', THEME.colors.accent2)
-stat(s, M + 4.1, 3.4, 3.7, '119', 'automated tests', C.text1)
+stat(s, M + 4.1, 3.4, 3.7, '138', 'automated tests', C.text1)
 stat(s, M + 8.2, 3.4, 3.7, 'CI', 'fails on drift', THEME.colors.accent1)
 
 card(s, M, 5.15, W - 2 * M, 1.5, THEME.colors.lt2, 'negatives card')

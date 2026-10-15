@@ -293,7 +293,7 @@ s.addText('Re-runs every number in our docs. If one stops being true, the build 
     isTextBox: true, margin: 0 })
 
 const stats = [['10/10', 'claims reproduced', THEME.colors.accent2],
-               ['130', 'automated tests', C.text1],
+               ['138', 'automated tests', C.text1],
                ['16', 'controllers benchmarked', C.text1]]
 stats.forEach((st, i) => {
   const x = M + i * 4.0

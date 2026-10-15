@@ -11,6 +11,7 @@ from app.controllers.registry import CONTROLLERS, DEFAULT_CONTROLLER, describe
 from app.services.benchmark import run_benchmark, run_benchmark_suite
 from app.services.calibration import CalibrationError, calibrate
 from app.services.comparison import run_comparison
+from app.services.custom_run import run_custom
 from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor, run_preemption_comparison
 from app.services.greenwave import plan_green_wave
 from app.services.impact import ImpactAssumptions, compare_impact
@@ -100,6 +101,15 @@ class FleetStudyRequest(BaseModel):
     demand_multiplier: float = 7.0
     contrast: bool = True
     steps: int = 200
+
+
+class CustomRunRequest(BaseModel):
+    arrivals: dict[str, float] | None = None
+    mix: dict[str, float] | None = None
+    controllers: list[str] | None = None
+    steps: int = 180
+    seed: int = 7
+    shielded: bool = True
 
 
 class CalibrationRequest(BaseModel):
@@ -265,6 +275,14 @@ def comparison(left: str = 'fixed-time', right: str = DEFAULT_CONTROLLER, steps:
 
 
 # ----------------------------------------------------------------- green wave
+
+@app.post('/api/custom/run')
+def custom_run(body: CustomRunRequest):
+    """Run the simulation on demand figures the user typed in."""
+    return run_custom(arrivals=body.arrivals, mix=body.mix,
+                      controllers=body.controllers, steps=body.steps,
+                      seed=body.seed, shielded=body.shielded)
+
 
 @app.get('/api/sensing/compare')
 def sensing_compare(seed: int = 19, steps: int = 160, noise: float = 0.14,
